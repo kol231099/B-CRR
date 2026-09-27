@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000">
+<title>B-CRR 保密協定</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#000;color:#fff;padding:3rem 22px 4rem;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+.wrap{width:min(100%,640px);margin:0 auto}
+h1{font-family:Archivo,sans-serif;font-size:1.3rem;font-weight:700;margin:0 0 .3rem}
+.sub{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.16em;
+  text-transform:uppercase;opacity:.5;margin:0 0 1.8rem}
+.rule{height:1px;background:#fff;margin:1.8rem 0}
+
+ol{margin:0;padding-left:0;list-style:none;counter-reset:n}
+ol li{counter-increment:n;position:relative;padding-left:2.6rem;margin-bottom:1.5rem}
+ol li::before{content:counter(n,decimal-leading-zero);position:absolute;left:0;top:.15rem;
+  font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.1em;opacity:.5}
+ol li b{font-weight:500;display:block;margin-bottom:.15rem}
+ol li span{font-size:.92rem;opacity:.72;line-height:1.75}
+
+.who{font-family:"IBM Plex Mono",monospace;font-size:.78rem;opacity:.55;margin:0 0 1.4rem}
+button{font:inherit;color:#fff;background:none;cursor:pointer;width:100%;
+  padding:.95rem 1rem;border:1px solid #fff;border-radius:3px;font-weight:500;
+  transition:background .25s,color .25s}
+button:hover,button:focus-visible{background:#fff;color:#000}
+button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+button:disabled{opacity:.4;cursor:default;background:none;color:#fff}
+a.out{display:inline-block;margin-top:1.1rem;font-family:"IBM Plex Mono",monospace;
+  font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:#fff;opacity:.5}
+a.out:hover{opacity:1}
+.msg{color:#E9C93F;font-size:.86rem;margin:.9rem 0 0;min-height:1.4em}
+</style>
+
+<div class="wrap">
+  <h1>使用前的保密約定</h1>
+  <p class="sub">Confidentiality agreement</p>
+
+  <p class="who" id="who">載入中…</p>
+
+  <ol>
+    <li><b>這裡面是真的病患影像</b><span>保險庫收的是根尖片，屬於醫療個人資料。
+      即使影像上沒有姓名，仍然可能被還原對應到特定的人。</span></li>
+
+    <li><b>不要帶出去</b><span>不下載、不截圖、不轉貼到任何通訊軟體或雲端硬碟，
+      也不放進簡報、報告或社群貼文。需要對外展示時，一律使用系統提供的示範影像。</span></li>
+
+    <li><b>帳號是你一個人的</b><span>不把帳號借給別人，不在共用電腦上保持登入。
+      離開座位前請登出。</span></li>
+
+    <li><b>每一次都會留下紀錄</b><span>系統會記下誰在什麼時間登入、查閱了哪些影像。
+      紀錄只保留這些欄位，不記錄影像內容本身。</span></li>
+
+    <li><b>影像會存在伺服器上，而且是加密的</b><span>你放進保險庫的影像會保存在
+      伺服器，換一台電腦登入同一個帳號就看得到。檔案以 AES-256-GCM 加密後才落地，
+      金鑰與資料分開存放。影像不會用於模型訓練，也不會提供給第三方。
+      伺服器位於新加坡，上傳即表示你同意這些資料離開台灣境內。</span></li>
+
+    <li><b>保存期限 30 天，到期自動刪除</b><span>影像存滿 30 天會自動從伺服器刪除，
+      不另行通知、沒有回收桶。用不到的醫療影像留著，只會讓萬一外洩時的損失更大。</span></li>
+
+    <li><b>你可以隨時提前刪掉</b><span>在任何一個保險箱裡按「清空這箱」，
+      伺服器上的檔案會一併刪除。刪掉就救不回來。</span></li>
+
+    <li><b>判讀結果不是診斷</b><span>本系統輸出的三項指標與風險分數為量測輔助，
+      供臨床人員參考，不得單獨作為診斷、治療或預後判斷的依據。</span></li>
+
+    <li><b>發現問題請立刻說</b><span>如果懷疑帳號外流、看到不該看到的資料，
+      或系統行為異常，請立即通知系統管理者並停止使用。</span></li>
+  </ol>
+
+  <div class="rule"></div>
+
+  <button id="ok">我已閱讀並同意，進入保險庫</button>
+  <p class="msg" id="msg"></p>
+  <a class="out" href="#" id="out">改天再說，登出</a>
+</div>
+
+<script>
+(async () => {
+  const msg = document.getElementById("msg");
+
+  /* 先確認身分；沒登入就沒什麼好同意的 */
+  const r = await fetch("/api/auth/me", {credentials: "same-origin"});
+  if(!r.ok){ location.replace("/login.html"); return; }
+  const me = await r.json();
+  document.getElementById("who").textContent = me.name + "　" + me.email;
+  if(me.nda){ location.replace("/vault.html"); return; }
+
+  document.getElementById("ok").onclick = async (e) => {
+    e.target.disabled = true;
+    msg.textContent = "";
+    try{
+      const res = await fetch("/api/auth/nda", {method: "POST", credentials: "same-origin"});
+      if(!res.ok) throw new Error("伺服器回應 " + res.status);
+      location.replace("/vault.html");
+    }catch(err){
+      msg.textContent = "送出失敗：" + err.message;
+      e.target.disabled = false;
+    }
+  };
+
+  document.getElementById("out").onclick = async (e) => {
+    e.preventDefault();
+    await fetch("/api/auth/logout", {method: "POST", credentials: "same-origin"});
+    location.replace("/login.html");
+  };
+})();
+</script>

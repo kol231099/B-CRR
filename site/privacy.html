@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000">
+<title>B-CRR 隱私權政策</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#000;color:#fff;padding:3.2rem 22px 5rem;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+.wrap{width:min(100%,660px);margin:0 auto}
+a{color:#fff}
+h1{font-family:Archivo,sans-serif;font-size:1.45rem;font-weight:700;margin:0 0 .3rem;
+  letter-spacing:-.01em}
+.sub{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.16em;
+  text-transform:uppercase;opacity:.5;margin:0 0 .4rem}
+.when{font-family:"IBM Plex Mono",monospace;font-size:.72rem;opacity:.4;margin:0 0 2.2rem}
+.rule{height:1px;background:#fff;margin:2.2rem 0}
+.lead{font-size:.95rem;opacity:.85;margin:0 0 2.2rem;line-height:1.85}
+h2{font-family:Archivo,sans-serif;font-size:1rem;font-weight:600;margin:2.4rem 0 .8rem;
+  padding-top:1.4rem;border-top:1px solid rgba(255,255,255,.18)}
+h2:first-of-type{border-top:0;padding-top:0}
+p{margin:0 0 1rem;font-size:.92rem;opacity:.82}
+ul{margin:0 0 1.1rem;padding-left:0;list-style:none}
+li{position:relative;padding-left:1.4rem;margin-bottom:.55rem;font-size:.92rem;opacity:.82}
+li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:1px;background:#fff;opacity:.6}
+b{font-weight:500;opacity:1}
+.box{border:1px solid var(--note,#E9C93F);border-left-width:3px;padding:.9rem 1.1rem;
+  margin:0 0 1.6rem;font-size:.9rem;color:#E9C93F;line-height:1.75}
+table{width:100%;border-collapse:collapse;margin:0 0 1.2rem;font-size:.88rem}
+th,td{text-align:left;padding:.6rem .8rem .6rem 0;border-bottom:1px solid rgba(255,255,255,.14);
+  vertical-align:top}
+th{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.1em;
+  text-transform:uppercase;opacity:.5;font-weight:400}
+td:first-child{white-space:nowrap;padding-right:1.6rem;opacity:1}
+td{opacity:.82}
+.back{display:inline-block;margin-top:2.6rem;font-family:"IBM Plex Mono",monospace;
+  font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;opacity:.5;
+  text-decoration:none}
+.back:hover{opacity:1}
+</style>
+
+<div class="wrap">
+  <h1>隱私權政策</h1>
+  <p class="sub">Privacy policy</p>
+  <p class="when">最後更新：2026 年 9 月 26 日</p>
+
+  <p class="lead">B-CRR 是中原大學的學生研究專題，用於自動量測根尖片的骨水平冠根比。
+    這份政策說明這個系統實際上對你的資料做了什麼 —— 每一條都對應到程式裡真正的行為，
+    不是範本。</p>
+
+  <h2>我們收到什麼</h2>
+  <table>
+    <tr><th>項目</th><th>用途</th></tr>
+    <tr><td>Google 帳號的電子郵件與顯示名稱</td><td>辨識你是誰，以及你的保險庫是哪一個</td></tr>
+    <tr><td>你上傳的影像（密文）</td><td>存進你的保險庫</td></tr>
+    <tr><td>影像的檔名（密文）</td><td>顯示給你看</td></tr>
+    <tr><td>分析結果（密文）</td><td>下次登入還看得到</td></tr>
+    <tr><td>操作紀錄</td><td>誰、什麼時間、做了什麼動作</td></tr>
+  </table>
+  <p>我們<b>不會</b>向你索取姓名、身分證字號、出生日期、電話、地址，
+    或任何與病患身分有關的資料。Google 登入只提供電子郵件與顯示名稱，
+    我們沒有要求其他權限。</p>
+
+  <h2>我們看不到什麼</h2>
+  <div class="box">
+    你上傳的影像、檔名與分析結果，在離開你的電腦之前就已經加密。
+    我們的伺服器沒有任何一把鑰匙可以打開它們。
+  </div>
+  <p>加密金鑰由你的通關密語在你的瀏覽器裡產生，<b>從來不會傳送到我們的伺服器</b>。
+    伺服器上只有兩個被鎖住的盒子（一個對應你的通關密語，一個對應你的救援碼），
+    以及一堆無法解讀的密文。</p>
+  <p>唯一的例外是<b>執行分析的那幾秒</b>：影像必須在你的瀏覽器裡解密，
+    送到伺服器上讓模型計算。這段期間影像只存在於記憶體中，計算完即釋放，
+    不會以明文寫入磁碟。</p>
+
+  <h2>加密方式</h2>
+  <table>
+    <tr><th>位置</th><th>方式</th></tr>
+    <tr><td>傳輸過程</td><td>TLS 1.3</td></tr>
+    <tr><td>你的瀏覽器內</td><td>AES-256-GCM，金鑰以 PBKDF2-SHA256（600,000 次迭代）從通關密語產生</td></tr>
+    <tr><td>伺服器落地前</td><td>AES-256-GCM 第二層，金鑰與資料分開存放</td></tr>
+  </table>
+
+  <h2>保存多久</h2>
+  <ul>
+    <li><b>影像：30 天後自動刪除</b>，檔案與紀錄一併清除，沒有回收桶。</li>
+    <li>你也可以隨時在保險箱裡按「清空這箱」提前刪除，刪掉即無法復原。</li>
+    <li>操作紀錄保留於伺服器，內容僅有帳號、時間與動作類型。</li>
+  </ul>
+
+  <h2>資料放在哪裡</h2>
+  <p>伺服器位於<b>新加坡</b>。使用本服務即表示你了解並同意這些資料會離開台灣境內。</p>
+
+  <h2>誰看得到</h2>
+  <p>只有你。每一筆資料都綁定帳號，每一次查詢都會檢查擁有者。
+    其他使用者即使知道影像的識別碼，也無法取得。</p>
+  <p>我們<b>不會</b>將你的資料提供、出售或分享給任何第三方，
+    <b>不會</b>用於訓練模型，<b>不會</b>用於廣告或分析追蹤。
+    本站沒有任何第三方追蹤程式碼，唯一的 cookie 是維持登入狀態所需。</p>
+
+  <h2>你可以做什麼</h2>
+  <ul>
+    <li>隨時刪除保險箱內的影像。</li>
+    <li>隨時登出；登出時瀏覽器上的加密金鑰會一併清除。</li>
+    <li>要求刪除整個帳號與相關紀錄，請以下方信箱聯絡我們。</li>
+  </ul>
+
+  <h2>重要提醒</h2>
+  <div class="box">
+    通關密語與救援碼都只有你有，我們無法幫你重設。
+    兩者都遺失時，保險庫內的資料將永久無法解密 —— 這正是「我們看不到」的代價，
+    也是它的證明。
+  </div>
+
+  <h2>本系統不是醫療器材</h2>
+  <p>輸出的量測數值與風險分數為研究用途的輔助資訊，
+    <b>不得作為診斷、治療或預後判斷的依據</b>。任何臨床決定仍應由合格醫事人員作成。</p>
+
+  <h2>聯絡方式</h2>
+  <p>中原大學　B-CRR 專題團隊<br>
+    <a href="mailto:surviv.io1001@gmail.com">surviv.io1001@gmail.com</a></p>
+  <p>另請參閱<a href="/terms.html">服務條款</a>。</p>
+
+  <div class="rule"></div>
+  <a class="back" href="/">← 回首頁</a>
+</div>

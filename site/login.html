@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000">
+<title>B-CRR 登入</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#000;color:#fff;display:grid;place-items:center;padding:22px;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.panel{width:min(100%,430px);animation:rise .7s cubic-bezier(.16,1,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.panel{animation:none}}
+
+.mark{width:100%;height:auto;display:block;margin-bottom:1.6rem}
+h1{font-family:Archivo,sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:.02em;
+  margin:0 0 .35rem}
+.sub{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.16em;
+  text-transform:uppercase;opacity:.5;margin:0 0 1.5rem}
+.rule{height:1px;background:#fff;opacity:.9;margin:1.5rem 0}
+p.note{font-size:.84rem;opacity:.55;margin:0}
+
+button{font:inherit;color:#fff;background:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:.7rem;
+  width:100%;padding:.95rem 1rem;border:1px solid #fff;border-radius:3px;
+  font-weight:500;letter-spacing:.01em;transition:background .25s,color .25s}
+button:hover,button:focus-visible{background:#fff;color:#000}
+button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+button svg{width:18px;height:18px;flex:none}
+
+.err{border:1px solid #E9C93F;border-left-width:3px;padding:.7rem .9rem;margin:0 0 1.4rem;
+  font-size:.86rem;color:#E9C93F}
+.err[hidden]{display:none}
+</style>
+
+<div class="panel">
+  <!-- 關著的保險箱門：跟保險庫那頁同一套語彙，純線條 -->
+  <svg class="mark" viewBox="0 0 430 150" role="img" aria-label="一扇關著的保險箱門">
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="150" y="10" width="130" height="130" rx="4"/>
+      <rect x="160" y="20" width="110" height="110" rx="2" opacity=".45"/>
+      <circle cx="215" cy="75" r="26"/>
+      <circle cx="215" cy="75" r="7"/>
+      <path d="M215 49v-9M215 110v-9M189 75h-9M250 75h-9"/>
+      <path d="M0 75h140M290 75h140" opacity=".25"/>
+    </g>
+  </svg>
+
+  <h1>B-CRR 保險庫</h1>
+  <p class="sub">Authorised access only</p>
+
+  <p class="err" id="err" hidden></p>
+
+  <button id="go">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/><path d="M12 12h9a9 9 0 0 1-9 9 9 9 0 0 1 0-18 9 9 0 0 1 6.4 2.7"/>
+    </svg>
+    以 Google 帳號登入
+  </button>
+
+  <div class="rule"></div>
+  <p class="note">保險庫存放的是病患的根尖片。每個帳號有自己的一份，
+    別人看不到你的；影像在伺服器上是加密保存的，每一次登入與查閱都會留下紀錄。</p>
+</div>
+
+<script>
+/* 錯誤訊息由伺服器用 ?err= 帶回來。用 textContent 塞，不要用 innerHTML——
+   那是網址列來的字串，當成 HTML 解讀就是一個注入點。 */
+const err = new URLSearchParams(location.search).get("err");
+if(err){ const el = document.getElementById("err"); el.textContent = err; el.hidden = false; }
+
+/* 登入完回到原本想去的地方；沒有就回保險庫 */
+const next = new URLSearchParams(location.search).get("next") || "/vault.html";
+document.getElementById("go").onclick = () => {
+  location.href = "/api/auth/login?next=" + encodeURIComponent(next);
+};
+</script>

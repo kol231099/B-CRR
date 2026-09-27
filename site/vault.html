@@ -1,0 +1,2220 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000">
+<title>B-CRR 保險庫</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ease:cubic-bezier(.22,1,.36,1);
+  --out:cubic-bezier(.16,1,.3,1);
+  --spring:cubic-bezier(.32,1.12,.5,1);
+  --note:#E9C93F;            /* 便條紙：全站唯一的顏色 */
+  --note-d:#C9A81E;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#000;color:#fff;overflow:hidden;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:"IBM Plex Mono",monospace}
+
+/* 分頁列 */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:90;display:flex;align-items:center;
+  gap:1.4rem;padding:.7rem 22px;background:rgba(0,0,0,.8);backdrop-filter:blur(14px);
+  border-bottom:1px solid #fff}
+.topbar .brand{font-family:Archivo,sans-serif;font-weight:700;font-size:.95rem;
+  letter-spacing:-.02em;margin-right:auto}
+.topbar a{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#fff;text-decoration:none;opacity:.55;
+  padding:.35rem .1rem;border-bottom:1px solid transparent;transition:.3s}
+.topbar a:hover{opacity:1}
+.topbar a.on{opacity:1;border-bottom-color:#fff}
+.topbar .me{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.06em;
+  opacity:.45;max-width:26ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar a.me-out{opacity:.45}
+.topbar a.me-out:hover{opacity:1}
+.topbar a.me-out[hidden]{display:none}
+
+/* 解鎖／設定通關密語 */
+#lock{position:fixed;inset:0;z-index:200;background:#000;display:none;
+  place-items:center;padding:3.6rem 22px 2rem;overflow:auto}
+#lock.on{display:grid}
+.lk{width:min(100%,460px);animation:lkin .6s var(--out) both}
+@keyframes lkin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.lk{animation:none}}
+.lk h2{font-family:Archivo,sans-serif;font-size:1.15rem;font-weight:700;margin:0 0 .3rem}
+.lk .sub{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.16em;
+  text-transform:uppercase;opacity:.5;margin:0 0 1.5rem}
+.lk p{font-size:.88rem;opacity:.72;line-height:1.75;margin:0 0 1.1rem}
+.lk input{width:100%;font:inherit;font-family:"IBM Plex Mono",monospace;color:#fff;
+  background:none;border:1px solid #fff;border-radius:3px;padding:.8rem .9rem;
+  margin-bottom:.7rem}
+.lk input:focus{outline:2px solid #fff;outline-offset:2px}
+.lk button.go{width:100%;padding:.9rem;border:1px solid #fff;border-radius:3px;
+  font-weight:500;transition:background .25s,color .25s}
+.lk button.go:hover:not(:disabled){background:#fff;color:#000}
+.lk button.go:disabled{opacity:.35;cursor:default}
+.lk .alt{display:block;margin:1.1rem auto 0;font-family:"IBM Plex Mono",monospace;
+  font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;opacity:.5}
+.lk .alt:hover{opacity:1}
+.lk .warn{border:1px solid var(--note);border-left-width:3px;padding:.85rem 1rem;
+  margin:0 0 1.3rem;font-size:.85rem;color:var(--note);line-height:1.7}
+.lk .err{color:var(--note);font-size:.85rem;min-height:1.4em;margin:.5rem 0 0}
+.lk .rule{height:1px;background:#fff;opacity:.35;margin:1.5rem 0}
+.rec{font-family:"IBM Plex Mono",monospace;font-size:1rem;letter-spacing:.14em;
+  border:1px solid #fff;padding:1.1rem;text-align:center;line-height:2.1;
+  word-break:break-all;margin:0 0 1.2rem}
+.recbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem;
+  margin-bottom:1.3rem}
+.recbtns button{padding:.6rem;border:1px solid #fff;border-radius:3px;font-size:.82rem;
+  transition:background .25s,color .25s}
+.recbtns button:hover{background:#fff;color:#000}
+.lk label.ck{display:flex;gap:.6rem;align-items:flex-start;font-size:.85rem;
+  opacity:.8;margin-bottom:1.1rem;cursor:pointer}
+.lk label.ck input{width:auto;margin:.25rem 0 0;flex:none}
+.linkbtn.danger{color:var(--note)}
+.linkbtn.danger[hidden]{display:none}
+
+/* 三個畫面互相淡入淡出 */
+.screen{position:fixed;inset:0;padding:3.6rem 22px 1.1rem;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .55s var(--ease),visibility .55s}
+.screen.on{opacity:1;visibility:visible;pointer-events:auto}
+
+/* ─────────── 畫面一：保險庫 ─────────── */
+#scVault{--gap:clamp(3px,.62vw,10px);
+  --gw:min(92vw,calc(100vw - 44px),calc(100svh - 9.4rem));
+  --cs:calc((var(--gw) - 6*var(--gap))/7);
+  display:grid;grid-template-rows:auto minmax(0,1fr);justify-items:center;
+  align-items:center;gap:.9rem}
+.vhead{display:flex;align-items:baseline;gap:1.1rem;width:var(--gw);
+  border-bottom:1px solid #fff;padding-bottom:.5rem}
+.vhead h1{font-family:Archivo,sans-serif;font-size:1.05rem;font-weight:700;
+  letter-spacing:.02em;margin:0}
+.vhead .sub{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.14em;
+  opacity:.55;margin-left:auto;text-transform:uppercase}
+
+.grid{width:var(--gw);height:var(--gw);
+  display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat(7,1fr);
+  gap:var(--gap)}
+.cell{position:relative;width:100%;height:100%;border-radius:3px;z-index:1;
+  transition:transform .4s var(--spring)}
+.cell:hover{transform:translateY(-2px)}
+.cell:active{transform:translateY(0) scale(.97)}
+.cell:focus-visible{outline:1px solid #fff;outline-offset:3px}
+.cell svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.cell .ln{fill:none;stroke:#fff;vector-effect:non-scaling-stroke;stroke-linecap:round}
+
+/* 空格：虛線框 + 加號 */
+.cell .empty{opacity:.42;transition:opacity .35s var(--ease)}
+.cell:hover .empty{opacity:1}
+.cell .empty .fr{stroke-dasharray:5 6;stroke-width:1}
+.cell .empty .pl{stroke-width:1.7;transition:transform .5s var(--spring);
+  transform-box:fill-box;transform-origin:center}
+.cell:hover .empty .pl{transform:rotate(90deg)}
+
+/* 有資料：關起來的保險箱 */
+.cell .safe{opacity:0;transition:opacity .45s var(--ease)}
+.cell.filled .empty{opacity:0;pointer-events:none}
+.cell.filled .safe{opacity:1}
+.cell .safe .cab{stroke-width:1.9}
+.cell .safe .door{stroke-width:1.1;opacity:.86}
+.cell .safe .det{stroke-width:1.1;opacity:.72}
+.cell .safe .dial{stroke-width:1.35;transform-box:fill-box;transform-origin:center;
+  transition:transform .75s var(--spring)}
+.cell.filled:hover .safe .dial{transform:rotate(-58deg)}
+.cell .safe .hub{fill:#fff;stroke:none}
+.cell.filled:hover .safe .cab{stroke-width:2.4}
+
+.cell .cnt{position:absolute;right:8%;bottom:6%;font-family:"IBM Plex Mono",monospace;
+  font-size:calc(var(--cs)*.10);letter-spacing:.06em;opacity:0;transition:opacity .4s}
+.cell.filled .cnt{opacity:.62}
+.cell .tag{position:absolute;left:14%;top:10%;
+  font-family:"IBM Plex Mono",monospace;font-size:calc(var(--cs)*.092);
+  letter-spacing:.1em;opacity:.3}
+.cell.filled .tag{opacity:.5}
+
+/* 便條紙：全站唯一有顏色的東西 */
+.note{position:absolute;left:50%;top:52%;width:86%;aspect-ratio:1/.6;
+  background:var(--note);color:#17140a;border-radius:1px;
+  display:grid;place-content:center;text-align:center;gap:.18em;
+  padding:4% 2% 5%;line-height:1.2;letter-spacing:0;font-weight:500;
+  font-size:calc(var(--cs)*.112);white-space:nowrap;
+  box-shadow:0 7px 18px rgba(0,0,0,.6), 0 1px 0 rgba(0,0,0,.45);
+  clip-path:polygon(0 0,100% 0,100% 78%,78% 100%,0 100%);
+  transform:translate(-50%,-50%) rotate(var(--rot,-3deg));z-index:3;
+  opacity:0;pointer-events:none;transition:opacity .3s}
+.note::after{content:"";position:absolute;right:0;bottom:0;width:22%;height:22%;
+  background:linear-gradient(315deg,var(--note-d) 46%,rgba(0,0,0,.35) 100%);
+  clip-path:polygon(100% 0,0 100%,100% 100%)}
+.note b{display:block;font-weight:700}
+.cell.done{z-index:4}
+.cell.done .note{opacity:1}
+.cell.done .safe{opacity:.62}
+.cell.done .cnt{opacity:0}
+.note.drop{animation:drop .72s var(--spring) both}
+@keyframes drop{
+  0%{opacity:0;transform:translate(-50%,-190%) rotate(-24deg) scale(1.1)}
+  55%{opacity:1}
+  70%{transform:translate(-50%,-50%) rotate(calc(var(--rot) + 5deg)) scale(1.04)}
+  100%{opacity:1;transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
+}
+.cell.pop{animation:pop .6s var(--spring)}
+@keyframes pop{0%{transform:scale(.8)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+
+/* ─────────── 開關門：整片蓋上去的大保險箱 ─────────── */
+#door{position:fixed;inset:0;z-index:80;display:grid;grid-template-rows:1fr auto;
+  place-items:center;gap:1.6rem;padding:4rem 22px 3rem;background:#000;
+  opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility .45s}
+#door.on{opacity:1;visibility:visible}
+.scene{perspective:1500px;perspective-origin:38% 50%;display:grid;place-items:center;
+  width:100%;height:100%}
+.cab{--S:min(56svh,50vw,30rem);position:relative;width:var(--S);height:var(--S);
+  transform:scale(.88);opacity:0;transition:transform .7s var(--spring),opacity .5s}
+#door.on .cab{transform:scale(1);opacity:1}
+
+/* 箱體與內部 */
+.inner{position:absolute;inset:0;border:1.6px solid #fff;border-radius:4px;
+  overflow:hidden;background:#000}
+.inner::before{content:"";position:absolute;left:0;top:0;bottom:0;width:19%;
+  border-right:1px solid rgba(255,255,255,.28)}
+.spill{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(104deg,rgba(255,255,255,.22),rgba(255,255,255,.03) 34%,rgba(255,255,255,0) 60%);
+  opacity:0}
+.stack{position:absolute;inset:8% 7% 7% 23%;display:grid;
+  grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:5%;align-content:start}
+.stack img{width:100%;height:100%;object-fit:cover;filter:grayscale(1) contrast(1.05);
+  border:1px solid rgba(255,255,255,.75);opacity:0;
+  transform:translateY(-26px) scale(.9) rotate(var(--r,0deg))}
+.stack img.in{animation:slot .55s var(--spring) both}
+@keyframes slot{0%{opacity:0;transform:translateY(-34px) scale(.88) rotate(calc(var(--r) * 3))}
+  100%{opacity:1;transform:translateY(0) scale(1) rotate(var(--r))}}
+.more{position:absolute;right:7%;bottom:3%;font-family:"IBM Plex Mono",monospace;
+  font-size:.64rem;letter-spacing:.1em;opacity:0;transition:opacity .4s}
+
+/* 門片 */
+.leaf{position:absolute;inset:0;transform-origin:left center;transform-style:preserve-3d;
+  will-change:transform}
+.leaf .face{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.leaf .face *{vector-effect:non-scaling-stroke}
+.leaf .sh{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;
+  border-radius:4px}
+.bolt{position:absolute;right:-11px;width:15px;height:5.5%;min-height:8px;
+  background:#000;border:1.4px solid #fff;border-radius:1px;will-change:transform}
+.bolt.b1{top:20%} .bolt.b2{top:47.2%} .bolt.b3{top:74.5%}
+.hinge{position:absolute;left:-7px;width:9px;height:9%;background:#000;
+  border:1.4px solid #fff;border-radius:2px}
+.hinge.h1{top:16%} .hinge.h2{top:75%}
+
+.dstat{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.24em;
+  text-transform:uppercase;opacity:.7;min-height:1.2em;text-align:center}
+.dstat b{font-weight:400;border-bottom:1px solid #fff;padding-bottom:2px}
+
+/* ─────────── 畫面二：挑照片 ─────────── */
+#scPick{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:1rem;
+  max-width:76rem;margin:0 auto}
+.phead{display:flex;align-items:baseline;gap:1rem;border-bottom:1px solid #fff;
+  padding-bottom:.55rem}
+.phead h2{font-family:Archivo,sans-serif;font-size:1.05rem;font-weight:700;margin:0;
+  letter-spacing:.02em}
+.phead .sub{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.14em;
+  opacity:.55;text-transform:uppercase}
+.linkbtn{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;opacity:.6;border-bottom:1px solid transparent;transition:.3s}
+.linkbtn:hover{opacity:1;border-bottom-color:#fff}
+.phead .linkbtn{margin-left:auto}
+
+.pgrid{overflow-y:auto;display:grid;gap:clamp(8px,1vw,14px);align-content:start;
+  grid-template-columns:repeat(auto-fill,minmax(clamp(110px,13vw,170px),1fr));
+  padding:2px 4px 2px 2px;scrollbar-width:thin;scrollbar-color:#fff #000}
+.pgrid::-webkit-scrollbar{width:6px}
+.pgrid::-webkit-scrollbar-thumb{background:#fff}
+.thumb{position:relative;aspect-ratio:4/3;border:1px solid rgba(255,255,255,.4);
+  overflow:hidden;transition:border-color .3s,transform .4s var(--spring)}
+.thumb img{width:100%;height:100%;object-fit:cover;
+  filter:grayscale(1) contrast(1.05) brightness(.68);transition:filter .35s}
+.thumb:hover{border-color:#fff;transform:translateY(-2px)}
+.thumb:hover img{filter:grayscale(1) contrast(1.05) brightness(.88)}
+.thumb.sel{border-color:#fff;border-width:2px}
+.thumb.sel img{filter:grayscale(1) contrast(1.08) brightness(1)}
+.tick{position:absolute;left:8px;top:8px;width:19px;height:19px;border:1.4px solid #fff;
+  background:rgba(0,0,0,.55);border-radius:2px;display:grid;place-items:center}
+.tick svg{width:12px;height:12px;stroke:#000;stroke-width:2.4;fill:none;
+  stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:18;stroke-dashoffset:18;transition:stroke-dashoffset .28s var(--out)}
+.thumb.sel .tick{background:#fff}
+.thumb.sel .tick svg{stroke-dashoffset:0}
+.tname{position:absolute;left:0;right:0;bottom:0;padding:3px 7px;
+  font-family:"IBM Plex Mono",monospace;font-size:.6rem;letter-spacing:.04em;
+  background:linear-gradient(transparent,rgba(0,0,0,.88));
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}
+
+.pfoot{display:flex;align-items:center;gap:1.2rem;border-top:1px solid #fff;
+  padding-top:.8rem}
+.pfoot .cnt2{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;
+  opacity:.65;margin-right:auto}
+#goRun{font-family:Archivo,sans-serif;font-weight:700;font-size:.92rem;
+  letter-spacing:.01em;border:1.5px solid #fff;padding:.62rem 1.9rem;border-radius:2px;
+  transition:background .3s var(--ease),color .3s var(--ease),opacity .3s}
+#goRun:hover:not(:disabled){background:#fff;color:#000}
+#goRun:disabled{opacity:.28;cursor:not-allowed}
+
+/* ─────────── 畫面三：跑一輪（黑白） ─────────── */
+#scRun{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:.9rem;
+  max-width:84rem;margin:0 auto}
+.rtop{display:flex;align-items:center;gap:1rem;font-family:"IBM Plex Mono",monospace;
+  font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+  border-bottom:1px solid #fff;padding-bottom:.55rem}
+.rtop .rid{font-weight:500}
+.rtop .dim{opacity:.55}
+.pbar{flex:1;height:5px;border:1px solid #fff;padding:1px;min-width:80px}
+.pbar i{display:block;height:100%;background:#fff;width:0%;transition:width .18s linear}
+.rmid{display:grid;grid-template-columns:minmax(0,1fr) clamp(16rem,25%,23rem);
+  gap:1rem;min-height:0}
+.stagebox{position:relative;border:1px solid rgba(255,255,255,.55);min-height:0;
+  display:grid;grid-template-rows:auto minmax(0,1fr)}
+.stagebox .cap{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.1em;
+  padding:.4rem .7rem;border-bottom:1px solid rgba(255,255,255,.35);
+  display:flex;gap:.9rem;opacity:.8}
+.stagebox .cap span:last-child{margin-left:auto;opacity:.6}
+#cv{width:100%;height:100%;display:block;min-height:0}
+.logbox{border:1px solid rgba(255,255,255,.55);display:grid;
+  grid-template-rows:auto minmax(0,1fr);min-height:0}
+.lgh{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.16em;
+  padding:.4rem .7rem;border-bottom:1px solid rgba(255,255,255,.35);opacity:.8}
+.lg{overflow:hidden;padding:.55rem .7rem;font-family:"IBM Plex Mono",monospace;
+  font-size:.665rem;line-height:1.85;display:flex;flex-direction:column;
+  justify-content:flex-start}
+.lg div{white-space:nowrap;opacity:0;animation:lgin .3s var(--out) both}
+.lg div .t{opacity:.45;margin-right:.6em}
+.lg div .k{display:inline-block;min-width:4.6em;opacity:.95}
+.lg div .v{opacity:.6}
+@keyframes lgin{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.strip{display:flex;gap:7px;align-items:center;border-top:1px solid #fff;
+  padding-top:.7rem;overflow-x:auto;min-height:0}
+.sthumb{position:relative;flex:0 0 auto;width:44px;height:34px;
+  border:1px solid rgba(255,255,255,.3);overflow:hidden;transition:.35s var(--ease)}
+.sthumb img{width:100%;height:100%;object-fit:cover;filter:grayscale(1) brightness(.4)}
+.sthumb.now{border-color:#fff;transform:translateY(-3px)}
+.sthumb.now img{filter:grayscale(1) brightness(.85)}
+.sthumb.ok img{filter:grayscale(1) brightness(.6)}
+.sthumb.bad{border-color:rgba(255,255,255,.75);border-style:dashed}
+.sthumb.ok::after{content:"";position:absolute;right:3px;bottom:2px;width:9px;height:5px;
+  border-left:1.6px solid #fff;border-bottom:1.6px solid #fff;transform:rotate(-45deg)}
+
+/* 跑完的結語 */
+.rdone{position:absolute;inset:0;display:grid;place-content:center;gap:.5rem;
+  text-align:center;background:#000;opacity:0;pointer-events:none;
+  transition:opacity .4s var(--ease)}
+.rdone.on{opacity:1}
+.rdone .big{font-family:Archivo,sans-serif;font-weight:700;font-size:clamp(1.4rem,3.4vw,2.4rem);
+  letter-spacing:-.01em}
+.rdone .sm{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.2em;
+  text-transform:uppercase;opacity:.6}
+
+/* ─────────── 開場：那段開門影片 ─────────── */
+#intro{position:fixed;inset:0;z-index:120;background:#000;display:grid;place-items:center;
+  transition:opacity .9s var(--ease)}
+#intro.out{opacity:0;pointer-events:none}
+#intro video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+#introSkip{position:absolute;right:22px;bottom:20px;opacity:.45}
+
+/* ─────────── 畫面四：全方位診斷報告書 ─────────── */
+/* 與 demo.html 的那張同一份版型，只是改成進場後自己展開，不靠捲動 */
+#scSheet{display:grid;place-items:center}
+.sheet{width:min(96vw,84rem);border:1px solid #fff;background:#000;
+  display:grid;grid-template-columns:15rem 1fr;
+  grid-template-rows:auto minmax(0,1fr);
+  height:min(46rem,calc(100svh - 5.6rem));overflow:hidden;
+  transform-origin:center;will-change:transform,opacity}
+.sheet.done .bar,.sheet.done .arc{transition:transform .8s var(--out),
+  stroke-dashoffset .9s var(--out)}
+.sheet-hd{grid-column:1/-1;display:flex;align-items:center;gap:.8rem;
+  padding:.85rem 1.2rem;border-bottom:1px solid #fff}
+.sheet-hd b{font-family:Archivo,sans-serif;font-size:.92rem;font-weight:600}
+.sheet-hd .who{font-family:"IBM Plex Mono",monospace;font-size:.74rem}
+.sheet-hd .tag{font-family:"IBM Plex Mono",monospace;font-size:.6rem;
+  letter-spacing:.18em;border:1px solid #fff;padding:.12rem .6rem}
+.sheet-hd .linkbtn{margin-left:auto}
+
+.files{border-right:1px solid #fff;padding:.8rem .7rem;display:flex;
+  flex-direction:column;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.files h4{margin:.2rem .4rem .6rem;font-family:"IBM Plex Mono",monospace;font-size:.62rem;
+  letter-spacing:.18em;text-transform:uppercase;font-weight:400;opacity:.6}
+.fold>button{width:100%;display:flex;align-items:center;gap:.5rem;background:none;border:0;
+  color:#fff;font:inherit;font-size:.8rem;text-align:left;padding:.4rem .45rem;cursor:pointer}
+.fold>button:hover{background:#151515}
+.fold .ar{font-family:monospace;font-size:.6rem;transition:transform .25s;opacity:.7}
+.fold.open .ar{transform:rotate(90deg);opacity:1}
+.fold .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.66rem;opacity:.6}
+.kids{display:none;padding:.1rem 0 .35rem .9rem;flex-direction:column}
+.fold.open .kids{display:flex}
+.kids button{background:none;border:0;border-left:1px solid transparent;color:#fff;
+  font:inherit;font-size:.76rem;text-align:left;padding:.28rem .45rem;cursor:pointer;
+  display:flex;gap:.5rem;opacity:.6}
+.kids button:hover{opacity:1}
+.kids button.on{opacity:1;border-left-color:#fff;background:#151515}
+.kids button.dead{opacity:.4;cursor:default}
+.kids button span{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.68rem}
+
+.sbody{display:grid;grid-template-columns:minmax(0,15rem) 1fr;gap:1.4rem;
+  padding:1.3rem;min-height:0}
+.toothbox{display:flex;flex-direction:column;justify-content:center;min-height:0}
+.toothbox svg{width:100%;height:auto;max-height:100%;margin:0 auto}
+.right{display:grid;grid-template-rows:auto minmax(0,1fr);gap:1.1rem;
+  min-width:0;min-height:0}
+.mrow{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #fff}
+.mrow div{padding:.85rem .95rem;border-right:1px solid #fff}
+.mrow div:last-child{border-right:0}
+.mrow b{display:block;font-family:"IBM Plex Mono",monospace;font-size:.64rem;
+  letter-spacing:.14em;opacity:.6}
+.mrow s{display:block;text-decoration:none;font-family:Archivo,sans-serif;
+  font-size:clamp(1.2rem,2.4vw,1.75rem);font-weight:700;letter-spacing:-.02em;
+  margin-top:.15rem;font-variant-numeric:tabular-nums}
+.mrow em{font-style:normal;font-size:.7rem;opacity:.55}
+.lower{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:1.1rem;min-height:0}
+.chart{border:1px solid #fff;padding:1rem;display:flex;min-height:0}
+.chart svg{width:100%;flex:1;min-height:0}
+.gauges{display:flex;gap:1rem;justify-content:flex-end}
+.gauge{width:8.4rem;border:1px solid #fff;padding:.8rem;display:flex;
+  flex-direction:column;align-items:center;gap:.4rem}
+.gauge svg{width:5.4rem;height:5.4rem}
+.gauge b{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.14em}
+
+/* 報告書的兩種狀態：示範那顆牙 vs 這一箱真的跑過的影像 */
+#sheet.real .toothbox{display:none}
+#sheet:not(.real) .shotbox{display:none}
+#sheet.real .sbody{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)}
+.shotbox{display:flex;align-items:center;justify-content:center;min-height:0;
+  border:1px solid rgba(255,255,255,.4);padding:.5rem;will-change:opacity,transform}
+.shotbox img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.mrow s.na{opacity:.3}
+.mrow .pending{grid-column:1/-1;font-family:"Noto Sans TC",sans-serif;font-size:.68rem;
+  line-height:1.5;letter-spacing:.02em;opacity:.45;padding:.55rem .95rem;
+  border-right:0;border-top:1px solid rgba(255,255,255,.22)}
+#sheet:not(.real) .mrow .pending{display:none}
+@media (max-width:1080px){.sheet{grid-template-columns:12rem 1fr}
+  .sbody{grid-template-columns:minmax(0,11rem) 1fr}.gauge{width:7rem}}
+@media (max-width:860px){
+  .sheet{grid-template-columns:1fr}
+  .files{border-right:0;border-bottom:1px solid #fff}
+  .sbody{grid-template-columns:1fr}
+}
+
+@media (max-width:880px){
+  .rmid{grid-template-columns:1fr;grid-template-rows:minmax(0,1.6fr) minmax(0,1fr)}
+}
+@media (max-width:620px){
+  .screen{padding:3.2rem 14px 1rem}
+  .topbar{gap:.9rem;padding:.6rem 14px}
+  .topbar a{font-size:.64rem;letter-spacing:.1em}
+  #scVault{--gap:3px;--gw:min(calc(100vw - 28px),calc(100svh - 8.2rem))}
+  .note{width:116%;aspect-ratio:1/.66;font-size:calc(var(--cs)*.136)}
+  .cab{--S:min(46svh,84vw)}
+}
+@media (prefers-reduced-motion:reduce){
+  .cell,.note,.thumb,.sthumb{transition-duration:.01ms!important;animation-duration:.01ms!important}
+}
+</style>
+
+<div id="intro">
+  <video id="introV" muted playsinline preload="auto" src="media/vault-intro.mp4?v=202609241225"></video>
+  <button class="linkbtn" id="introSkip">跳過</button>
+</div>
+
+<nav class="topbar">
+  <div class="brand">B-CRR.</div>
+  <a href="index.html">首頁</a>
+  <a href="demo.html">Demo</a>
+  <a href="vault.html" class="on">保險庫</a>
+  <span id="meName" class="me"></span>
+  <a href="#" id="meOut" class="me-out" hidden>登出</a>
+</nav>
+
+<!-- ── 通關密語：解開保險庫的那把鑰匙 ── -->
+<div id="lock">
+  <div class="lk">
+    <!-- 第一次：設定 -->
+    <div id="lkNew" hidden>
+      <h2>設定保險庫通關密語</h2>
+      <p class="sub">Set your passphrase</p>
+      <div class="warn">
+        這把鑰匙只有你有。影像在離開這台電腦之前就已經加密，
+        <b>我們的伺服器打不開它，也無法幫你重設</b>。
+      </div>
+      <p>請設定一組至少 12 個字的通關密語。建議用四個不相關的英文單字，
+         好記又難猜。</p>
+      <input id="p1" type="password" autocomplete="new-password" placeholder="通關密語">
+      <input id="p2" type="password" autocomplete="new-password" placeholder="再輸入一次">
+      <p class="err" id="pErr"></p>
+      <button class="go" id="pGo" disabled>繼續</button>
+    </div>
+
+    <!-- 第一次：救援碼 -->
+    <div id="lkRec" hidden>
+      <h2>你的救援碼</h2>
+      <p class="sub">Recovery key</p>
+      <div class="warn">
+        這是你<b>唯一一次</b>看到這組救援碼。忘記通關密語時，它是唯一的方法。
+        兩個都弄丟，保險庫裡的東西就永久打不開了——我們沒有備份，
+        因為我們從來就沒有鑰匙。
+      </div>
+      <div class="rec" id="recText">—</div>
+      <div class="recbtns">
+        <button id="recDl">下載成檔案</button>
+        <button id="recPrint">列印</button>
+        <button id="recCopy">複製</button>
+        <button id="recMail">寄給我自己</button>
+      </div>
+      <p style="font-size:.8rem;opacity:.5;margin-bottom:1.2rem">
+        寄到信箱最方便，但信箱被盜就等於保險庫被開。最安全是印出來收好，
+        或存進密碼管理程式。這封信是由你自己的郵件程式寄出，不經過我們的伺服器。</p>
+      <label class="ck"><input type="checkbox" id="recOk">
+        我已經把救援碼保存好，並且明白遺失後無法復原</label>
+      <p class="err" id="recErr"></p>
+      <button class="go" id="recGo" disabled>建立保險庫</button>
+    </div>
+
+    <!-- 之後每次：解鎖 -->
+    <div id="lkOpen" hidden>
+      <h2>解鎖保險庫</h2>
+      <p class="sub">Unlock</p>
+      <p>輸入你的通關密語。金鑰會在這台電腦上算出來，不會傳給我們。</p>
+      <input id="u1" type="password" autocomplete="current-password" placeholder="通關密語">
+      <p class="err" id="uErr"></p>
+      <button class="go" id="uGo">解鎖</button>
+      <a href="#" class="alt" id="uRec">忘記了，改用救援碼</a>
+    </div>
+
+    <!-- 用救援碼重設 -->
+    <div id="lkReset" hidden>
+      <h2>用救援碼進入</h2>
+      <p class="sub">Recovery</p>
+      <p>輸入當初保存的救援碼，接著設定一組新的通關密語。
+         你的影像不需要重新上傳。</p>
+      <input id="r1" type="text" autocapitalize="characters" spellcheck="false"
+             placeholder="XXXXX-XXXXX-XXXXX-…">
+      <input id="r2" type="password" autocomplete="new-password" placeholder="新的通關密語">
+      <input id="r3" type="password" autocomplete="new-password" placeholder="再輸入一次">
+      <p class="err" id="rErr"></p>
+      <button class="go" id="rGo">重設</button>
+      <a href="#" class="alt" id="rBack">回上一步</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── 畫面一：保險庫 ── -->
+<section id="scVault" class="screen on">
+  <div class="vhead" id="vhead">
+    <h1>VAULT</h1>
+    <div class="sub mono">7 × 7 · <span id="vCount">0</span> 箱有資料</div>
+  </div>
+  <div class="grid" id="grid"></div>
+</section>
+
+<!-- ── 畫面二：挑照片 ── -->
+<section id="scPick" class="screen">
+  <div class="phead">
+    <h2 id="pkTitle">保險箱 A1</h2>
+    <div class="sub mono" id="pkSub">0 張影像</div>
+    <button class="linkbtn" id="pkBack">← 回保險庫</button>
+  </div>
+  <div class="pgrid" id="pgrid"></div>
+  <div class="pfoot">
+    <div class="cnt2 mono" id="pkSel">已勾選 0 張</div>
+    <button class="linkbtn" id="pkAll">全選</button>
+    <button class="linkbtn" id="pkNone">清除</button>
+    <button class="linkbtn danger" id="pkWipe">清空這箱</button>
+    <button id="goRun" disabled>繼續</button>
+  </div>
+</section>
+
+<!-- ── 畫面三：跑一輪 ── -->
+<section id="scRun" class="screen">
+  <div class="rtop">
+    <span class="rid">RUN</span>
+    <span class="dim" id="rIdx">00 / 00</span>
+    <div class="pbar"><i id="pFill"></i></div>
+    <span class="dim" id="rPct">0%</span>
+  </div>
+  <div class="rmid">
+    <div class="stagebox">
+      <div class="cap mono"><span id="rName">—</span><span id="rPhase">—</span></div>
+      <canvas id="cv"></canvas>
+      <div class="rdone" id="rDone">
+        <div class="big" id="rDoneBig">已完成</div>
+        <div class="sm" id="rDoneSub">returning to vault</div>
+      </div>
+    </div>
+    <div class="logbox">
+      <div class="lgh">LOG</div>
+      <div class="lg mono" id="lg"></div>
+    </div>
+  </div>
+  <div class="strip" id="strip"></div>
+</section>
+
+<!-- ── 畫面四：全方位診斷報告書 ── -->
+<section id="scSheet" class="screen">
+  <div class="sheet" id="sheet">
+    <div class="sheet-hd st">
+      <b>B-CRR 分析報告</b>
+      <span class="who" id="shTitle">113 · 下顎右側　#45</span>
+      <span class="tag" id="shTag">DEMO DATA</span>
+      <button class="linkbtn" id="shBack">← 回保險庫</button>
+    </div>
+
+    <div class="files st">
+      <h4>Batches</h4>
+      <div id="folders"></div>
+    </div>
+
+    <div class="sbody">
+      <div class="toothbox st">
+        <svg viewBox="0 0 170 360" role="img"
+             aria-label="測試集 113 #45 的實際輪廓，轉正後標出 CEJ 與 ALC">
+          <path id="toothOut" d="M72.3 14.0C67.8 14.2 65.9 14.6 62.2 16.0C58.4 17.4 54.5 19.3 49.8 22.4C45.1 25.5 37.5 30.1 33.9 34.6C30.3 39.0 29.9 42.5 28.4 49.2C26.9 55.9 25.1 69.2 24.6 74.7C24.2 80.1 24.1 77.2 25.8 81.9C27.4 86.6 32.2 95.7 34.7 102.8C37.1 109.9 39.2 117.8 40.7 124.6C42.1 131.3 42.8 136.9 43.3 143.5C43.8 150.1 43.1 158.1 43.6 164.2C44.1 170.4 45.6 173.9 46.2 180.6C46.8 187.2 45.5 191.7 47.3 204.2C49.1 216.7 54.3 236.2 56.9 255.4C59.6 274.7 61.2 306.3 63.3 319.5C65.5 332.6 68.0 331.3 69.8 334.4C71.5 337.6 71.1 337.0 73.7 338.3C76.3 339.5 82.3 341.6 85.5 342.0C88.6 342.4 90.4 341.7 92.7 340.9C95.0 340.0 97.0 339.5 99.2 336.9C101.3 334.2 103.5 329.8 105.5 325.1C107.4 320.4 108.8 319.2 110.7 308.6C112.6 298.1 115.8 276.2 117.0 261.6C118.2 246.9 117.5 229.7 117.9 220.5C118.4 211.3 119.6 209.7 119.8 206.5C120.0 203.2 118.3 211.7 118.9 201.0C119.6 190.3 122.4 154.9 123.8 142.3C125.2 129.7 124.3 135.7 127.4 125.3C130.6 115.0 139.6 91.5 142.6 80.2C145.6 69.0 145.0 62.2 145.4 57.8C145.7 53.5 146.0 56.4 144.8 54.2C143.6 52.0 144.5 50.1 138.4 44.4C132.3 38.8 116.4 25.1 108.2 20.2C100.0 15.3 95.2 16.1 89.2 15.0C83.2 14.0 76.8 13.8 72.3 14.0Z"
+                fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/>
+          <line class="lvl" x1="14" y1="131.9" x2="126" y2="131.9" stroke="#fff"
+                stroke-width="1" stroke-dasharray="5 5"/>
+          <line class="lvl" id="lAlc" x1="14" y1="200" x2="126" y2="200" stroke="#fff"
+                stroke-width="1" stroke-dasharray="5 5"/>
+          <text class="lvl" x="132" y="134.9" fill="#fff"
+                font-family="IBM Plex Mono,monospace" font-size="11">CEJ</text>
+          <text class="lvl" id="tAlc" x="132" y="203" fill="#fff"
+                font-family="IBM Plex Mono,monospace" font-size="11">ALC</text>
+        </svg>
+      </div>
+
+      <div class="shotbox st"><img id="shotImg" alt="跑完之後標上 ROI 與卡尺的影像"></div>
+
+      <div class="right">
+        <div class="mrow st">
+          <div><b>CRR</b><s id="vCRR">0.4414</s><em>JL / KL</em></div>
+          <div><b>ABLR</b><s id="vABLR">0.3169</s><em>1 − SK / LK</em></div>
+          <div><b>B-CRR</b><s id="vBCRR">1.1100</s><em>JS / KS</em></div>
+          <div class="pending">三個指標要等模型接上才有值；上面那張圖與右側讀數是這次實際算出來的。</div>
+        </div>
+        <div class="lower">
+          <div class="chart st"><svg id="bars" viewBox="0 0 320 196"
+            preserveAspectRatio="xMidYMid meet"></svg></div>
+          <div class="gauges st">
+            <div class="gauge"><svg id="dConf" viewBox="0 0 100 100"></svg><b>信心</b></div>
+            <div class="gauge"><svg id="dRisk" viewBox="0 0 100 100"></svg><b>風險程度</b></div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 開關門 ── -->
+<div id="door">
+  <div class="scene">
+    <div class="cab" id="cab">
+      <div class="inner">
+        <div class="stack" id="dStack"></div>
+        <div class="more mono" id="dMore"></div>
+        <div class="spill" id="dSpill"></div>
+      </div>
+      <div class="hinge h1"></div>
+      <div class="hinge h2"></div>
+      <div class="leaf" id="dLeaf">
+        <svg class="face" viewBox="0 0 100 100" aria-hidden="true">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#000"
+                stroke="#fff" stroke-width="1.6"/>
+          <rect x="4" y="4" width="92" height="92" rx="2" fill="none"
+                stroke="#fff" stroke-width=".5" opacity=".45"/>
+          <g stroke="#fff" fill="none" opacity=".5" stroke-width=".5">
+            <circle cx="7.5" cy="7.5" r="1.5"/><circle cx="92.5" cy="7.5" r="1.5"/>
+            <circle cx="7.5" cy="92.5" r="1.5"/><circle cx="92.5" cy="92.5" r="1.5"/>
+          </g>
+          <rect x="33" y="10.5" width="34" height="7" rx="1" fill="none"
+                stroke="#fff" stroke-width=".6" opacity=".6"/>
+          <text x="50" y="15.6" text-anchor="middle" fill="#fff" opacity=".8"
+                font-family="IBM Plex Mono, monospace" font-size="4"
+                letter-spacing="1.1" id="dPlate">A1</text>
+          <!-- 號碼盤 -->
+          <g id="dDialWrap">
+            <circle cx="36" cy="52" r="21" fill="none" stroke="#fff" stroke-width=".6" opacity=".5"/>
+            <circle cx="36" cy="52" r="17.5" fill="#000" stroke="#fff" stroke-width="1.1"/>
+            <g id="dDial">
+              <circle cx="36" cy="52" r="13" fill="none" stroke="#fff" stroke-width=".55" opacity=".55"/>
+              <g id="dTicks" stroke="#fff" stroke-width=".7"></g>
+              <line x1="36" y1="52" x2="36" y2="36.4" stroke="#fff" stroke-width="1.2"/>
+              <circle cx="36" cy="52" r="3.2" fill="#fff"/>
+            </g>
+            <polygon points="36,29.4 34.1,26 37.9,26" fill="#fff" id="dIdx"/>
+          </g>
+          <!-- 轉輪把手 -->
+          <g id="dWheelWrap">
+            <circle cx="76" cy="52" r="15.5" fill="none" stroke="#fff" stroke-width=".5" opacity=".4"/>
+            <g id="dWheel">
+              <circle cx="76" cy="52" r="12.6" fill="none" stroke="#fff" stroke-width="1.1"/>
+              <circle cx="76" cy="52" r="3.4" fill="none" stroke="#fff" stroke-width="1"/>
+              <g stroke="#fff" stroke-width="1.5" stroke-linecap="round">
+                <line x1="76" y1="48.6" x2="76" y2="39.4"/>
+                <line x1="78.9" y1="53.7" x2="86.9" y2="58.3"/>
+                <line x1="73.1" y1="53.7" x2="65.1" y2="58.3"/>
+              </g>
+              <g fill="#fff">
+                <circle cx="76" cy="39.4" r="1.7"/><circle cx="86.9" cy="58.3" r="1.7"/>
+                <circle cx="65.1" cy="58.3" r="1.7"/>
+              </g>
+            </g>
+          </g>
+          <line x1="12" y1="82" x2="88" y2="82" stroke="#fff" stroke-width=".5" opacity=".3"/>
+          <text x="12" y="89.5" fill="#fff" opacity=".45"
+                font-family="IBM Plex Mono, monospace" font-size="3.4"
+                letter-spacing=".8" id="dCombo">— — —</text>
+        </svg>
+        <div class="bolt b1"></div><div class="bolt b2"></div><div class="bolt b3"></div>
+        <div class="sh" id="dSh"></div>
+      </div>
+    </div>
+  </div>
+  <div class="dstat mono" id="dStat"><b>&nbsp;</b></div>
+</div>
+
+<input type="file" id="fi" accept="image/*" multiple hidden>
+
+<script>
+/* ═══════════ 端對端加密 ═══════════
+   影像在離開這台電腦之前就已經是密文。伺服器收到的、存下來的、再傳回來的
+   都是密文，它沒有任何一把鑰匙可以打開。
+
+   三層金鑰，分開的理由：
+     通關密語 ──PBKDF2──► 包裝鑰 A ─┐
+                                    ├─► 各鎖一份「資料金鑰 DK」
+     救援碼 ─────────────► 包裝鑰 B ─┘
+                                        DK 才是真正拿來加密影像的
+
+   這樣換密語只要把小盒子重鎖一次，幾百張影像一張都不用動；
+   而伺服器手上永遠只有兩個打不開的盒子。
+
+   DK 存進 IndexedDB 的時候標成 non-extractable：JavaScript 拿得到它去解密，
+   但讀不出原始位元組。就算這頁被注入惡意腳本，也搬不走那把鑰匙。 */
+
+const CRY = (() => {
+  const C = crypto.subtle;
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const b64  = b => btoa(String.fromCharCode(...new Uint8Array(b)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+  /* 包裝鑰只做一件事：把資料金鑰那 32 個位元組加解密 */
+  const kekUse = ["encrypt", "decrypt"];
+
+  const ITER = 600000;            /* OWASP 對 PBKDF2-SHA256 的建議值。擋的是「拿到包裝盒之後離線暴力破解」 */
+
+  /* 救援碼：256 位元隨機，用不易看錯的字母表（沒有 0/O、1/I/L） */
+  const ALPHA = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+  function makeRecovery(){
+    const n = new Uint8Array(40); crypto.getRandomValues(n);
+    const s = [...n].map(v => ALPHA[v % ALPHA.length]).join("");
+    return s.match(/.{5}/g).join("-");                    /* 8 組 5 碼 */
+  }
+
+  async function fromPass(pass, salt){
+    const base = await C.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"]);
+    return C.deriveKey({name:"PBKDF2", salt, iterations:ITER, hash:"SHA-256"},
+                       base, {name:"AES-GCM", length:256}, false, kekUse);
+  }
+  async function fromRecovery(code){
+    const base = await C.importKey("raw", enc.encode(code.replace(/-/g, "")),
+                                   "PBKDF2", false, ["deriveKey"]);
+    /* 救援碼本身已經是 256 位元隨機，salt 固定、迭代數少一點就夠——
+       它沒有「人選的密碼」那種可猜性，不需要付同樣的計算代價 */
+    return C.deriveKey({name:"PBKDF2", salt:enc.encode("bcrr-recovery"),
+                        iterations:10000, hash:"SHA-256"},
+                       base, {name:"AES-GCM", length:256}, false, kekUse);
+  }
+
+  /* 把 DK 當成 32 個位元組來鎖，而不是用 wrapKey。
+     wrapKey 要求被鎖的金鑰是「可匯出」的，那正是我們不想要的性質；
+     直接加密位元組，解開之後再匯入成不可匯出，繞過這個矛盾。 */
+
+  async function wrap(dkBytes, kek){
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const w = await C.encrypt({name:"AES-GCM", iv}, kek, dkBytes);
+    return b64(iv) + "." + b64(w);
+  }
+  /* 平常解鎖用這個：拿到一把不可匯出的金鑰，位元組從此消失。 */
+  async function unwrap(blob, kek){
+    return C.importKey("raw", await unwrapBytes(blob, kek),
+                       {name:"AES-GCM"}, false, ["encrypt","decrypt"]);
+  }
+
+  /* 只有「設定」與「換密語」會用到位元組——那是唯一需要把 DK 重新鎖一次的時候。
+     日常解鎖走上面那個，位元組連出現都不會出現。 */
+  async function unwrapBytes(blob, kek){
+    const [iv, w] = blob.split(".");
+    return new Uint8Array(
+      await C.decrypt({name:"AES-GCM", iv:unb64(iv)}, kek, unb64(w)));
+  }
+
+  /* 內容加解密。每次獨立 IV，前 12 個位元組就是它。 */
+  async function seal(dk, bytes){
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await C.encrypt({name:"AES-GCM", iv}, dk, bytes);
+    const out = new Uint8Array(12 + ct.byteLength);
+    out.set(iv); out.set(new Uint8Array(ct), 12);
+    return out;
+  }
+  async function open(dk, bytes){
+    const b = new Uint8Array(bytes);
+    return new Uint8Array(await C.decrypt({name:"AES-GCM", iv:b.slice(0,12)}, dk, b.slice(12)));
+  }
+  const sealText = async (dk, t) => b64(await seal(dk, enc.encode(t)));
+  const openText = async (dk, s) => dec.decode(await open(dk, unb64(s)));
+
+  /* DK 放 IndexedDB。放 CryptoKey 物件本身，不是位元組。 */
+  const DB = "bcrr-key", ST = "k";
+  const idb = () => new Promise((ok, no) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(ST);
+    r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+  });
+  async function remember(dk, who){
+    const d = await idb();
+    await new Promise((ok, no) => {
+      const t = d.transaction(ST, "readwrite");
+      t.objectStore(ST).put({dk, who}, "cur");
+      t.oncomplete = ok; t.onerror = () => no(t.error);
+    });
+  }
+  async function recall(who){
+    try{
+      const d = await idb();
+      const v = await new Promise((ok, no) => {
+        const r = d.transaction(ST, "readonly").objectStore(ST).get("cur");
+        r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+      });
+      return (v && v.who === who) ? v.dk : null;   /* 換帳號就不算數 */
+    }catch(e){ return null; }
+  }
+  async function forget(){
+    try{
+      const d = await idb();
+      await new Promise(ok => {
+        const t = d.transaction(ST, "readwrite");
+        t.objectStore(ST).delete("cur"); t.oncomplete = ok; t.onerror = ok;
+      });
+    }catch(e){}
+  }
+
+  /* 新的資料金鑰。回傳兩個東西：
+       bytes  拿去用兩把包裝鑰各鎖一份（鎖完就丟掉）
+       key    這次工作階段實際拿來加解密的，不可匯出 */
+  async function create(){
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = await C.importKey("raw", bytes, {name:"AES-GCM"}, false,
+                                  ["encrypt","decrypt"]);
+    return {bytes, key};
+  }
+  const newSalt = () => crypto.getRandomValues(new Uint8Array(16));
+
+  return {b64, unb64, ITER, makeRecovery, fromPass, fromRecovery, wrap, unwrap,
+          unwrapBytes,
+          seal, open, sealText, openText, remember, recall, forget, create, newSalt};
+})();
+
+/* ═══════════ 身分 ═══════════ */
+/* 這個檔是 nginx 直接端出去的，伺服器端的守門攔不到，所以進來先問一次自己是誰。
+   這一段只決定「看不看得到介面」；真正把資料擋住的是 /api/predict 回的 401。 */
+(async () => {
+  try{
+    const r = await fetch("/api/auth/me", {credentials: "same-origin"});
+    if(r.status === 401){ location.replace("/login.html"); return; }
+    if(!r.ok) return;                       /* 舊版伺服器沒有這支，照常運作 */
+    const me = await r.json();
+    if(!me.nda && !me.open){ location.replace("/nda.html"); return; }
+    if(!me.open){
+      document.getElementById("meName").textContent = me.email;
+      const out = document.getElementById("meOut");
+      out.hidden = false;
+      out.onclick = async (e) => {
+        e.preventDefault();
+        await CRY.forget();               /* 金鑰跟著登出一起消失 */
+        await fetch("/api/auth/logout", {method:"POST", credentials:"same-origin"});
+        location.replace("/login.html");
+      };
+      await unlockFlow(me.email);
+    }
+  }catch(err){ /* 離線或服務沒起來：不要把人鎖在門外，交給 API 自己回 401 */ }
+})();
+
+/* ═══════════ 小工具 ═══════════ */
+const $  = s => document.querySelector(s);
+const RM = matchMedia("(prefers-reduced-motion:reduce)").matches;
+const SPD = RM ? .18 : 1;                       /* 想關動畫的人就讓它快轉 */
+const eo   = p => 1 - Math.pow(1 - p, 3);
+const eio  = p => p < .5 ? 4*p*p*p : 1 - Math.pow(-2*p + 2, 3)/2;
+const eoq  = p => 1 - Math.pow(1 - p, 4);
+const clamp= (v,a,b) => v < a ? a : v > b ? b : v;
+const seg  = (t,a,b) => clamp((t - a)/(b - a), 0, 1);
+const sleep= ms => new Promise(r => setTimeout(r, ms*SPD));
+
+/* 一段補間：fn(0…1) 每幀呼叫一次，結束時保證收在 1 */
+function T(ms, fn, ease = eo){
+  ms *= SPD;
+  return new Promise(res => {
+    const t0 = performance.now();
+    (function step(t){
+      const p = ms <= 0 ? 1 : Math.min(1, (t - t0)/ms);
+      fn(ease(p), p);
+      p < 1 ? requestAnimationFrame(step) : res();
+    })(t0);
+  });
+}
+
+/* ═══════════ 狀態 ═══════════ */
+const ROWS = "ABCDEFG", N = 49;
+const SLOT = Array.from({length:N}, () => ({items:[], done:false, combo:null, results:null}));
+const tagOf = i => ROWS[(i/7)|0] + ((i%7) + 1);
+const rnd = (a,b) => a + Math.floor(Math.random()*(b - a + 1));
+let openIdx = -1, pendingIdx = -1, busy = false;
+let REMOTE = false;                    /* 伺服器上有保險庫就是 true；本機模式是 false */
+
+/* 伺服器端保險庫。一個帳號一份，換電腦登入看到的是同一批片子。
+   失敗一律不擋使用者——存不進去最多是這次的東西沒留下來，
+   直接把整個畫面鎖住反而更糟。 */
+let DK = null;                         /* 這次工作階段的資料金鑰，不可匯出 */
+
+/* 伺服器端保險庫。一個帳號一份，換電腦登入看到的是同一批片子。
+
+   所有內容在離開這台電腦之前就已經加密——影像、檔名、分析結果都是。
+   伺服器收到的、存下來的、傳回來的都是密文，它沒有任何一把鑰匙。
+   只有箱子編號、密文大小、時間這些中繼資料是明的。 */
+const VAULT = {
+  async pull(){
+    const r = await fetch("/api/vault", {credentials:"same-origin"});
+    if(!r.ok) return null;
+    return r.json();
+  },
+  async push(i){                                   /* 把某一箱的狀態寫回去 */
+    if(!REMOTE || !DK) return;
+    const s = SLOT[i];
+    try{
+      await fetch("/api/vault/" + i, {
+        method:"PUT", credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          done: s.done, combo: s.combo,
+          /* 分析結果含座標與指標，一樣不讓伺服器看到 */
+          results: s.results ? await CRY.sealText(DK, JSON.stringify(s.results)) : null})});
+    }catch(e){ console.warn("保險庫寫入失敗", e); }
+  },
+  async upload(i, files){                          /* 回傳要放進 items 的東西 */
+    const fd = new FormData();
+    for(const f of files){
+      const ct = await CRY.seal(DK, await f.arrayBuffer());
+      const nm = await CRY.sealText(DK, f.name);
+      /* 送出去的檔名是固定字串：真正的檔名在 nm 裡，是密文。
+         伺服器的存取紀錄、反向代理的日誌都不會留下病患的檔名。 */
+      fd.append("files", new Blob([ct], {type:"application/octet-stream"}), "blob");
+      fd.append("names", nm);
+      fd.append("mimes", f.type);
+    }
+    const r = await fetch("/api/vault/" + i + "/items",
+                          {method:"POST", credentials:"same-origin", body:fd});
+    if(!r.ok) throw new Error((await r.text()).slice(0, 200));
+    const d = await r.json();
+    return d.items.map((x, k) => ({
+      id: x.id, cipher: "/api/vault/item/" + x.id,
+      url: URL.createObjectURL(files[k]),      /* 剛選的檔就在手上，不用再抓一次 */
+      blob: files[k], name: files[k].name, size: files[k].size, mime: files[k].type}));
+  },
+};
+
+/* ═══════════ 解鎖 ═══════════ */
+/* 兩件不同的事：Google 登入證明「你是誰」，通關密語打開「你的保險庫」。
+   伺服器只保管兩個鎖住的盒子，兩把鑰匙都在使用者手上。 */
+
+const LK = $("#lock");
+const pane = id => ["lkNew","lkRec","lkOpen","lkReset"]
+  .forEach(x => $("#" + x).hidden = (x !== id));
+
+async function unlockFlow(email){
+  REMOTE = true;
+  const meta = await (await fetch("/api/vault/key", {credentials:"same-origin"})).json();
+
+  if(!meta.exists) return setupFlow(email);
+
+  /* 這台電腦上次解鎖過就直接進去，不用再輸入一次 */
+  const kept = await CRY.recall(email);
+  if(kept){ DK = kept; return loadVault(); }
+
+  LK.classList.add("on"); pane("lkOpen"); $("#u1").focus();
+
+  const tryPass = async () => {
+    const pass = $("#u1").value;
+    if(!pass) return;
+    $("#uGo").disabled = true; $("#uErr").textContent = "解鎖中…";
+    try{
+      DK = await CRY.unwrap(meta.wrap_pass,
+             await CRY.fromPass(pass, CRY.unb64(meta.salt)));
+    }catch(err){
+      $("#uErr").textContent = "通關密語不正確";
+      $("#uGo").disabled = false; $("#u1").select(); return;
+    }
+    await CRY.remember(DK, email);
+    LK.classList.remove("on");
+    await loadVault();
+  };
+  $("#uGo").onclick = tryPass;
+  $("#u1").onkeydown = e => { if(e.key === "Enter") tryPass(); };
+
+  $("#uRec").onclick = e => { e.preventDefault(); pane("lkReset"); $("#r1").focus(); };
+  $("#rBack").onclick = e => { e.preventDefault(); pane("lkOpen"); $("#u1").focus(); };
+
+  $("#rGo").onclick = async () => {
+    const code = $("#r1").value.trim().toUpperCase();
+    const a = $("#r2").value, b = $("#r3").value;
+    if(a.length < 12) return $("#rErr").textContent = "新的通關密語至少要 12 個字";
+    if(a !== b)       return $("#rErr").textContent = "兩次輸入不一樣";
+    $("#rGo").disabled = true; $("#rErr").textContent = "處理中…";
+    let bytes;
+    try{
+      bytes = await CRY.unwrapBytes(meta.wrap_rec, await CRY.fromRecovery(code));
+    }catch(err){
+      $("#rErr").textContent = "救援碼不正確";
+      $("#rGo").disabled = false; return;
+    }
+    /* 只把「密語那份包裝」換掉。資料金鑰沒變，所以影像一張都不用重新加密。 */
+    const salt = CRY.newSalt();
+    const wrap = await CRY.wrap(bytes, await CRY.fromPass(a, salt));
+    bytes.fill(0);
+    const r = await fetch("/api/vault/key", {method:"PUT", credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({salt: CRY.b64(salt), wrap_pass: wrap})});
+    if(!r.ok){ $("#rErr").textContent = "儲存失敗，請再試一次";
+               $("#rGo").disabled = false; return; }
+    DK = await CRY.unwrap(wrap, await CRY.fromPass(a, salt));
+    await CRY.remember(DK, email);
+    LK.classList.remove("on");
+    await loadVault();
+  };
+}
+
+async function setupFlow(email){
+  LK.classList.add("on"); pane("lkNew"); $("#p1").focus();
+
+  const check = () => {
+    const a = $("#p1").value, b = $("#p2").value;
+    $("#pGo").disabled = !(a.length >= 12 && a === b);
+    $("#pErr").textContent = !a ? ""
+      : a.length < 12 ? `再 ${12 - a.length} 個字`
+      : (b && a !== b) ? "兩次輸入不一樣" : "";
+  };
+  $("#p1").oninput = $("#p2").oninput = check;
+
+  $("#pGo").onclick = async () => {
+    const pass = $("#p1").value;
+    const code = CRY.makeRecovery();
+    $("#recText").textContent = code;
+    pane("lkRec");
+
+    const body = `B-CRR 保險庫救援碼\n${email}\n\n${code}\n\n`
+      + `忘記通關密語時，這是唯一的方法。\n`
+      + `請妥善保存——遺失後無法復原，我們沒有備份。\n`;
+    $("#recDl").onclick = () => {
+      const u = URL.createObjectURL(new Blob([body], {type:"text/plain"}));
+      const a = document.createElement("a");
+      a.href = u; a.download = "bcrr-救援碼.txt"; a.click();
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
+    };
+    $("#recPrint").onclick = () => {
+      const w = window.open("", "_blank");
+      w.document.write(`<pre style="font:16px monospace;padding:40px;line-height:2">`
+        + body.replace(/</g, "&lt;") + `</pre>`);
+      w.document.close(); w.print();
+    };
+    $("#recCopy").onclick = async (e) => {
+      try{ await navigator.clipboard.writeText(code);
+           e.target.textContent = "已複製"; }
+      catch(err){ e.target.textContent = "複製失敗"; }
+      setTimeout(() => e.target.textContent = "複製", 1600);
+    };
+    /* mailto：信是你自己的郵件程式寄的，救援碼不經過我們的伺服器 */
+    $("#recMail").onclick = () => {
+      location.href = "mailto:" + encodeURIComponent(email)
+        + "?subject=" + encodeURIComponent("B-CRR 保險庫救援碼")
+        + "&body=" + encodeURIComponent(body);
+    };
+    $("#recOk").onchange = e => $("#recGo").disabled = !e.target.checked;
+
+    $("#recGo").onclick = async () => {
+      $("#recGo").disabled = true; $("#recErr").textContent = "建立中…";
+      const salt = CRY.newSalt();
+      const made = await CRY.create();
+      const wp = await CRY.wrap(made.bytes, await CRY.fromPass(pass, salt));
+      const wr = await CRY.wrap(made.bytes, await CRY.fromRecovery(code));
+      made.bytes.fill(0);            /* 原始位元組用完立刻抹掉 */
+      const r = await fetch("/api/vault/key", {method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({salt: CRY.b64(salt), wrap_pass: wp, wrap_rec: wr})});
+      if(!r.ok){ $("#recErr").textContent = "建立失敗，請重新整理再試一次";
+                 $("#recGo").disabled = false; return; }
+      DK = made.key;
+      await CRY.remember(DK, email);
+      LK.classList.remove("on");
+      await loadVault();
+    };
+  };
+}
+
+async function loadVault(){
+  try{
+    const v = await VAULT.pull();
+    if(!v) return;
+    for(const x of v.slots){
+      const t = SLOT[x.slot];
+      t.done = x.done; t.combo = x.combo;
+      t.results = x.results ? JSON.parse(await CRY.openText(DK, x.results)) : null;
+      t.items = await Promise.all(x.items.map(async it => ({
+        id: it.id, cipher: "/api/vault/item/" + it.id, url: null,
+        name: await CRY.openText(DK, it.name), size: it.size, mime: it.mime})));
+    }
+    SLOT.forEach((_, i) => refreshCell(i));
+  }catch(e){ console.warn("保險庫載入失敗", e); }
+}
+
+/* 把一整箱的影像解密成可以直接放進 <img> 的網址。
+   開箱前呼叫一次，後面所有畫面就跟以前一樣用 it.url 就好。 */
+async function ensureSlot(i){
+  const s = SLOT[i];
+  await Promise.all(s.items.map(async it => {
+    if(it.url || !it.cipher) return;
+    const r = await fetch(it.cipher, {credentials:"same-origin"});
+    if(!r.ok) throw new Error("讀不到影像 " + r.status);
+    const plain = await CRY.open(DK, await r.arrayBuffer());
+    it.blob = new Blob([plain], {type: it.mime || "image/jpeg"});
+    it.url = URL.createObjectURL(it.blob);
+  }));
+}
+
+/* ═══════════ 畫面切換 ═══════════ */
+const SCREENS = ["scVault","scPick","scRun","scSheet"];
+function show(id){
+  SCREENS.forEach(s => $("#" + s).classList.toggle("on", s === id));
+}
+
+/* ═══════════ 保險庫 7×7 ═══════════ */
+const grid = $("#grid");
+
+function dialTicks(cx, cy, r1s, r1l, r2, n = 36){
+  let s = "";
+  for(let i = 0; i < n; i++){
+    const a = i*(360/n)*Math.PI/180, lg = i % 3 === 0, r1 = lg ? r1l : r1s;
+    s += `<line x1="${(cx + Math.sin(a)*r1).toFixed(2)}" y1="${(cy - Math.cos(a)*r1).toFixed(2)}"`
+       + ` x2="${(cx + Math.sin(a)*r2).toFixed(2)}" y2="${(cy - Math.cos(a)*r2).toFixed(2)}"`
+       + ` opacity="${lg ? .9 : .4}"/>`;
+  }
+  return s;
+}
+
+const CELL_SVG = `
+<svg viewBox="0 0 100 100" aria-hidden="true">
+  <g class="empty">
+    <rect class="ln fr" x="7" y="7" width="86" height="86" rx="3"/>
+    <g class="ln pl"><line x1="50" y1="35" x2="50" y2="65"/><line x1="35" y1="50" x2="65" y2="50"/></g>
+  </g>
+  <g class="safe">
+    <rect class="ln cab" x="7" y="7" width="86" height="86" rx="3"/>
+    <rect class="ln door" x="12.5" y="12.5" width="75" height="75" rx="2"/>
+    <g class="ln det">
+      <rect x="9.2" y="25" width="4.2" height="9" rx="1"/>
+      <rect x="9.2" y="66" width="4.2" height="9" rx="1"/>
+      <line x1="39" y1="23" x2="61" y2="23"/>
+      <rect x="78" y="44" width="3.6" height="12" rx="1.8"/>
+    </g>
+    <g class="dial">
+      <circle class="ln" cx="50" cy="53" r="13.4" stroke-width="1.35"/>
+      <g class="ln" stroke-width=".7">${dialTicks(50, 53, 15.6, 14.8, 17.2, 24)}</g>
+      <line class="ln" x1="50" y1="53" x2="50" y2="41.8" stroke-width="1.25"/>
+      <circle class="hub" cx="50" cy="53" r="2.8"/>
+    </g>
+  </g>
+</svg>`;
+
+for(let i = 0; i < N; i++){
+  const b = document.createElement("button");
+  b.className = "cell";
+  b.dataset.i = i;
+  b.style.setProperty("--rot", (rnd(-5, 5)) + "deg");
+  b.innerHTML = CELL_SVG
+    + `<div class="tag">${tagOf(i)}</div><div class="cnt"></div>`
+    + `<div class="note"><b>已完成模型預測</b></div>`;
+  b.setAttribute("aria-label", `保險箱 ${tagOf(i)}，空的，按一下放入影像`);
+  b.onclick = () => { if(busy) return;
+    if(!SLOT[i].items.length) return addTo(i);
+    /* 開門動畫只在「回頭看已經分析過的那箱」時才跑；還沒跑過的直接進挑選 */
+    SLOT[i].done ? enterReport(i) : openPicker(i); };
+  grid.appendChild(b);
+}
+const cellEl = i => grid.children[i];
+
+function refreshCell(i){
+  const c = cellEl(i), s = SLOT[i];
+  c.classList.toggle("filled", s.items.length > 0);
+  c.classList.toggle("done", s.done);
+  c.querySelector(".cnt").textContent = s.items.length || "";
+  c.setAttribute("aria-label", s.items.length
+    ? `保險箱 ${tagOf(i)}，${s.items.length} 張影像${s.done ? "，已完成模型預測" : ""}`
+    : `保險箱 ${tagOf(i)}，空的，按一下放入影像`);
+  $("#vCount").textContent = SLOT.filter(s => s.items.length).length;
+}
+
+/* ═══════════ 放影像進去 ═══════════ */
+const fi = $("#fi");
+function addTo(i){ pendingIdx = i; fi.value = ""; fi.click(); }
+
+fi.onchange = async () => {
+  const files = [...fi.files].filter(f => f.type.startsWith("image/"));
+  if(!files.length || pendingIdx < 0) return;
+  const i = pendingIdx; pendingIdx = -1;
+  const s = SLOT[i];
+  if(!s.combo) s.combo = [rnd(2, 96), rnd(2, 96), rnd(2, 96)];
+
+  if(REMOTE){
+    /* 先送上去再顯示。反過來做的話，畫面上會出現一張其實沒存成功的片子，
+       重新整理就不見了——空間滿了的時候特別容易踩到。 */
+    try{
+      const added = await VAULT.upload(i, files);
+      s.items.push(...added);
+      await VAULT.push(i);
+    }catch(err){
+      alert("放不進去：" + err.message);
+      return;
+    }
+  }else{
+    files.forEach(f => s.items.push({url:URL.createObjectURL(f),
+                                     name:f.name, size:f.size}));
+  }
+  refreshCell(i);
+  openPicker(i);                       /* 選完檔就直接進挑選，不要卡一段關門動畫 */
+};
+
+/* ═══════════ 大保險箱：開門 / 關門 ═══════════ */
+const doorEl = $("#door"), leaf = $("#dLeaf"), sh = $("#dSh"), spill = $("#dSpill");
+const dDial = $("#dDial"), dWheel = $("#dWheel"), bolts = [...document.querySelectorAll(".bolt")];
+const dStat = $("#dStat").firstElementChild, dStack = $("#dStack"), dMore = $("#dMore");
+$("#dTicks").innerHTML = dialTicks(36, 52, 15.7, 14.6, 16.9, 36);
+
+let ang = 0;
+const setDial  = a => { ang = a; dDial.setAttribute("transform", `rotate(${a.toFixed(2)} 36 52)`); };
+const setWheel = a => dWheel.setAttribute("transform", `rotate(${a.toFixed(2)} 76 52)`);
+const setBolt  = p => bolts.forEach(b => b.style.transform = `translateX(${(-15*p).toFixed(2)}px)`);
+const setLeaf  = p => {
+  leaf.style.transform = `rotateY(${(-83*p).toFixed(2)}deg)`;
+  sh.style.opacity = (.66*p).toFixed(3);
+  spill.style.opacity = Math.min(1, p*1.4).toFixed(3);
+};
+const stat = t => dStat.textContent = t;
+
+function fillStack(i, animate){
+  const s = SLOT[i];
+  dStack.innerHTML = "";
+  s.items.slice(0, 6).forEach((it, k) => {
+    const im = new Image();
+    im.src = it.url;
+    im.alt = "";
+    im.style.setProperty("--r", rnd(-3, 3) + "deg");
+    if(animate) im.style.animationDelay = (k*0.085) + "s";
+    dStack.appendChild(im);
+    if(animate) requestAnimationFrame(() => im.classList.add("in"));
+    else { im.style.opacity = 1; im.style.transform = "none"; }
+  });
+  dMore.textContent = s.items.length > 6 ? "+" + (s.items.length - 6) : "";
+  dMore.style.opacity = s.items.length > 6 ? ".55" : "0";
+}
+
+/* 轉號碼盤：右三圈 → 左兩圈 → 右一圈，每次收在一個真的刻度上 */
+async function dialTo(turns, ms){
+  const a0 = ang, d = turns*360;
+  await T(ms, p => setDial(a0 + d*p), eoq);
+  await T(90, p => setDial(ang - 5*Math.sin(p*Math.PI)), p => p);
+}
+
+async function openSeq(i){
+  const s = SLOT[i];
+  if(!s.combo) s.combo = [rnd(2, 96), rnd(2, 96), rnd(2, 96)];
+  $("#dPlate").textContent = tagOf(i);
+  $("#dCombo").textContent = s.combo.map(n => String(n).padStart(2, "0")).join("  —  ");
+  setDial(0); setWheel(0); setBolt(0); setLeaf(0);
+  fillStack(i, false);
+  dStack.style.opacity = 0;
+  stat(" ");
+  doorEl.classList.add("on");
+  await sleep(320);
+
+  stat("輸入號碼 " + s.combo[0]);
+  await dialTo(3.35, 660);
+  stat("輸入號碼 " + s.combo[1]);
+  await dialTo(-2.2, 560);
+  stat("輸入號碼 " + s.combo[2]);
+  await dialTo(1.15, 440);
+  await sleep(90);
+
+  stat("解鎖");
+  await T(480, p => setWheel(-96*p), eio);
+  await sleep(60);
+  stat("退栓");
+  await T(240, p => setBolt(p), eio);
+  await sleep(110);
+
+  stat("開啟");
+  dStack.style.transition = "opacity .5s ease";
+  await T(900, p => { setLeaf(p); if(p > .35) dStack.style.opacity = seg(p, .35, .8); }, eio);
+  stat(s.items.length + " 張影像");
+  await sleep(520);
+}
+
+
+/* ═══════════ 畫面二：挑照片 ═══════════ */
+async function openPicker(i){
+  openIdx = i;
+  try{ if(REMOTE && DK) await ensureSlot(i); }
+  catch(err){ alert("影像解密失敗：" + err.message); return; }
+  buildPicker(i); show("scPick");
+}
+
+const pgrid = $("#pgrid");
+let sel = new Set();
+
+const TICK = `<div class="tick"><svg viewBox="0 0 16 16"><polyline points="3,8.4 6.6,12 13,4.6"/></svg></div>`;
+
+function buildPicker(i){
+  const s = SLOT[i];
+  sel = new Set();
+  $("#pkTitle").textContent = "保險箱 " + tagOf(i);
+  $("#pkSub").textContent = s.items.length + " 張影像";
+  $("#pkWipe").hidden = !s.items.length;
+  pgrid.innerHTML = "";
+  s.items.forEach((it, k) => {
+    const b = document.createElement("button");
+    b.className = "thumb";
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = `<img src="${it.url}" alt="">${TICK}<div class="tname">${it.name}</div>`;
+    b.onclick = () => {
+      sel.has(k) ? sel.delete(k) : sel.add(k);
+      b.classList.toggle("sel", sel.has(k));
+      b.setAttribute("aria-pressed", String(sel.has(k)));
+      syncSel();
+    };
+    pgrid.appendChild(b);
+  });
+  syncSel();
+}
+function syncSel(){
+  $("#pkSel").textContent = "已勾選 " + sel.size + " 張";
+  $("#goRun").disabled = sel.size === 0;
+}
+$("#pkAll").onclick  = () => { sel = new Set(SLOT[openIdx].items.map((_, k) => k));
+  [...pgrid.children].forEach(c => { c.classList.add("sel"); c.setAttribute("aria-pressed","true"); });
+  syncSel(); };
+$("#pkWipe").onclick = async () => {
+  const i = openIdx, s = SLOT[i];
+  if(!s.items.length) return;
+  if(!confirm(`把保險箱 ${tagOf(i)} 裡的 ${s.items.length} 張影像全部刪掉？\n`
+            + "伺服器上的檔案會一併刪除，救不回來。")) return;
+  if(REMOTE){
+    try{
+      const r = await fetch("/api/vault/" + i, {method:"DELETE", credentials:"same-origin"});
+      if(!r.ok) throw new Error((await r.text()).slice(0, 200));
+    }catch(err){ alert("刪不掉：" + err.message); return; }
+  }
+  s.items = []; s.done = false; s.results = null; s.combo = null;
+  refreshCell(i);
+  show("scVault");
+};
+
+$("#pkNone").onclick = () => { sel.clear();
+  [...pgrid.children].forEach(c => { c.classList.remove("sel"); c.setAttribute("aria-pressed","false"); });
+  syncSel(); };
+$("#pkBack").onclick = () => show("scVault");
+$("#goRun").onclick  = () => runBatch(openIdx, [...sel].sort((a, b) => a - b));
+
+/* ═══════════ 畫面三：黑白的那一輪 ═══════════ */
+const cv = $("#cv"), ctx = cv.getContext("2d");
+const lg = $("#lg"), strip = $("#strip");
+let CW = 0, CH = 0, F = {x:0, y:0, w:0, h:0}, t0 = 0;
+
+function fitCanvas(){
+  const r = cv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width  = Math.max(1, Math.round(r.width*dpr));
+  cv.height = Math.max(1, Math.round(r.height*dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CW = r.width; CH = r.height;
+}
+
+function log(k, v){
+  const el = document.createElement("div");
+  const ms = ((performance.now() - t0)/1000).toFixed(2).padStart(5, "0");
+  el.innerHTML = `<span class="t">${ms}</span><span class="k">${k}</span><span class="v">${v}</span>`;
+  lg.appendChild(el);
+  while(lg.children.length > 26) lg.removeChild(lg.firstChild);
+}
+
+/* 讀圖 → 灰階 / 網點 / 邊緣 / ROI，全部先算好，之後每幀只貼圖 */
+function prep(url){
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onerror = () => rej(new Error("讀不到影像"));
+    /* onload 裡面丟例外的話 promise 會永遠不 settle、整批就這樣卡住，包起來 */
+    img.onload = () => { try {
+      const MW = 520;
+      const k = Math.min(1, MW/img.naturalWidth);
+      const w = Math.max(2, Math.round(img.naturalWidth*k));
+      const h = Math.max(2, Math.round(img.naturalHeight*k));
+      const mk = () => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+
+      const gray = mk(), gc = gray.getContext("2d", {willReadFrequently:true});
+      gc.drawImage(img, 0, 0, w, h);
+      const d = gc.getImageData(0, 0, w, h), px = d.data;
+      const lum = new Float32Array(w*h);
+      let sum = 0;
+      for(let i = 0, j = 0; i < px.length; i += 4, j++){
+        const v = .2126*px[i] + .7152*px[i+1] + .0722*px[i+2];
+        lum[j] = v; sum += v; px[i] = px[i+1] = px[i+2] = v;
+      }
+      gc.putImageData(d, 0, 0);
+
+      /* 網點：先整張畫好，跑的時候只切一塊貼上去 */
+      const half = mk(), hc = half.getContext("2d");
+      hc.fillStyle = "#000"; hc.fillRect(0, 0, w, h);
+      hc.fillStyle = "#fff";
+      const step = Math.max(4, Math.round(w/90));
+      let cells = 0;
+      for(let y = step/2; y < h; y += step)
+        for(let x = step/2; x < w; x += step){
+          const r = Math.sqrt(lum[((y|0)*w) + (x|0)]/255)*step*.62;
+          if(r > .3){ hc.beginPath(); hc.arc(x, y, r, 0, 6.2832); hc.fill(); cells++; }
+        }
+
+      /* Sobel */
+      const mag = new Float32Array(w*h);
+      let mx = 1e-6;
+      for(let y = 1; y < h - 1; y++)
+        for(let x = 1; x < w - 1; x++){
+          const i = y*w + x;
+          const gx = -lum[i-w-1] - 2*lum[i-1] - lum[i+w-1] + lum[i-w+1] + 2*lum[i+1] + lum[i+w+1];
+          const gy = -lum[i-w-1] - 2*lum[i-w] - lum[i-w+1] + lum[i+w-1] + 2*lum[i+w] + lum[i+w+1];
+          const m = Math.hypot(gx, gy);
+          mag[i] = m; if(m > mx) mx = m;
+        }
+      const edge = mk(), ec = edge.getContext("2d"), ei = ec.createImageData(w, h);
+      for(let i = 0; i < w*h; i++){
+        ei.data[i*4] = ei.data[i*4+1] = ei.data[i*4+2] = 255;
+        ei.data[i*4+3] = Math.min(255, mag[i]/mx*330);
+      }
+      ec.putImageData(ei, 0, 0);
+
+      /* p95 只是拿來顯示這張圖的邊緣強度，抽樣算就夠 */
+      const samp = [];
+      for(let i = 0; i < w*h; i += 3) samp.push(mag[i]);
+      samp.sort((a, b) => a - b);
+      const pct = q => samp[Math.min(samp.length - 1, Math.floor(samp.length*q))];
+
+      res({gray, half, edge, w, h, cells, step,
+           mean:(sum/(w*h)).toFixed(1), p95:(pct(.95)/mx).toFixed(3),
+           src:[img.naturalWidth, img.naturalHeight]});
+    } catch(err){ rej(err); } };
+    img.src = url;
+  });
+}
+
+function setFit(P){
+  const pad = 20;
+  const s = Math.min((CW - pad*2)/P.w, (CH - pad*2)/P.h);
+  F = {x:(CW - P.w*s)/2, y:(CH - P.h*s)/2, w:P.w*s, h:P.h*s, s};
+}
+
+function standby(){
+  ctx.clearRect(0, 0, CW, CH);
+  F = {x:CW*.12, y:CH*.1, w:CW*.76, h:CH*.8, s:1};
+  ticks(.22);
+  mono("STANDBY", CW/2, CH/2 + 4, 12, .32, "center");
+}
+function base(P, ga, ea){
+  ctx.clearRect(0, 0, CW, CH);
+  if(ga > 0){ ctx.globalAlpha = ga; ctx.drawImage(P.gray, F.x, F.y, F.w, F.h); }
+  if(ea > 0){ ctx.globalAlpha = ea; ctx.drawImage(P.edge, F.x, F.y, F.w, F.h); }
+  ctx.globalAlpha = 1;
+}
+function ticks(a){
+  if(a <= 0) return;
+  ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 1;
+  const L = 15;
+  [[F.x, F.y, 1, 1], [F.x + F.w, F.y, -1, 1],
+   [F.x, F.y + F.h, 1, -1], [F.x + F.w, F.y + F.h, -1, -1]]
+  .forEach(([x, y, sx, sy]) => {
+    ctx.beginPath(); ctx.moveTo(x + sx*L, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy*L); ctx.stroke();
+  });
+}
+function mono(s, x, y, size = 11, a = .85, align = "left"){
+  ctx.fillStyle = `rgba(255,255,255,${a})`;
+  ctx.font = `${size}px "IBM Plex Mono", monospace`;
+  ctx.textAlign = align; ctx.textBaseline = "alphabetic";
+  ctx.fillText(s, x, y);
+  ctx.textAlign = "left";
+}
+
+/* ═══════════ 真的去問模型 ═══════════
+   推論服務跑在哪裡不固定：多半是作者自己的電腦（server/run-local.sh），
+   有一天也可能真的部署到同一台主機。與其叫人在網址後面接參數，這裡自己找：
+   先問同源的 /api/，沒有再退回本機的 127.0.0.1:8900。?api= 仍可強制指定。
+   回來的是座標不是圖片，所以後面那幾幕畫的是真的遮罩輪廓與特徵點。 */
+const API_FORCED = new URLSearchParams(location.search).get("api");
+const API_TRY = API_FORCED !== null ? [API_FORCED]
+              : ["", "http://127.0.0.1:8900", "http://localhost:8900"];
+let API = null;                                   /* 找到之後就記住 */
+
+async function findAPI(){
+  if(API !== null) return API;
+  for(const base of API_TRY){
+    try{
+      const c = new AbortController();
+      const bail = setTimeout(() => c.abort(), 2500);
+      const r = await fetch(base + "/api/health", {cache:"no-store", signal:c.signal});
+      clearTimeout(bail);
+      if(!r.ok) continue;
+      const h = await r.json();
+      if(h && h.ok){ API = base; return API; }
+    }catch(e){ /* 換下一個 */ }
+  }
+  return null;
+}
+
+async function predictOf(it){
+  const blob = await (await fetch(it.url)).blob();
+  const fd = new FormData();
+  fd.append("file", blob, it.name || "image.jpg");
+  const r = await fetch((API || "") + "/api/predict", {method:"POST", body:fd});
+  /* 401 是閒置太久被登出、403 是還沒簽保密協定——這兩種不是錯誤，是要去別的頁 */
+  if(r.status === 401){ location.replace("/login.html?next=" + encodeURIComponent("/vault.html")); return new Promise(() => {}); }
+  if(r.status === 403){ location.replace("/nda.html"); return new Promise(() => {}); }
+  if(!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).slice(0, 120));
+  return r.json();
+}
+
+/* 模型回的座標 → 畫布座標。伺服器可能先把長邊縮過，所以先換算到 prep 尺寸。 */
+function mapper(P, res){
+  const q = P.w/res.size[0];
+  return ([x, y]) => [F.x + x*q*F.s, F.y + y*q*F.s];
+}
+const okTeeth = res => (res && res.teeth || []).filter(t => t.ok);
+/* CRR 是冠根比，負的或大於 1.5 在生理上說不通——標出來，不要當成正常值 */
+const sane = t => t.ok && t.crr > 0 && t.crr <= 1.5;
+
+function pathOf(x, pts, m){
+  x.beginPath();
+  pts.forEach((pt, i) => { const [a, b] = m(pt); i ? x.lineTo(a, b) : x.moveTo(a, b); });
+  x.closePath();
+}
+
+const PT_ORDER = ["A", "B", "C", "D", "E", "F", "G"];
+/* 軸上的高度：H I 冠頂與邊緣嵴、J K L 冠根與根尖、Q R S 骨嵴相關。
+   三個指標就是從這幾條算出來的：CRR = JL/KL、ABLR = 1 − SK/LK、B-CRR = JS/KS */
+const LV_KEYS = ["H", "I", "J", "K", "L", "Q", "R", "S"];
+
+/* 把高度線、軸上的點與標籤畫出來。標籤擺在線的右端，太擠就往下推開。 */
+function drawLevels(x, t, m, a, labels, W){
+  if(!t.lv) return;
+  const items = [];
+  LV_KEYS.forEach(k => {
+    const lv = t.lv[k];
+    if(!lv) return;
+    const [x1, y1] = m(lv.line[0]), [x2, y2] = m(lv.line[1]), [px, py] = m(lv.p);
+    items.push({k, x1, y1, x2, y2, px, py});
+  });
+  if(!items.length) return;
+
+  x.strokeStyle = `rgba(255,255,255,${(.30*a).toFixed(3)})`;
+  x.lineWidth = .8;
+  items.forEach(it => { x.beginPath(); x.moveTo(it.x1, it.y1); x.lineTo(it.x2, it.y2); x.stroke(); });
+
+  x.fillStyle = `rgba(255,255,255,${(.8*a).toFixed(3)})`;
+  items.forEach(it => { x.beginPath(); x.arc(it.px, it.py, 1.9, 0, 6.2832); x.fill(); });
+  if(!labels) return;
+
+  /* Q R S 常常只差幾個像素，硬畫會疊成一團——由上往下依序推開 */
+  const tags = items.map(it => (it.x2 >= it.x1
+      ? {k:it.k, x:it.x2, y:it.y2} : {k:it.k, x:it.x1, y:it.y1}))
+    .sort((p, q) => p.y - q.y);
+  const GAP = 10;
+  for(let i = 1; i < tags.length; i++)
+    if(tags[i].y - tags[i - 1].y < GAP) tags[i].y = tags[i - 1].y + GAP;
+
+  x.textAlign = "left";
+  tags.forEach(g => {
+    const lx = Math.min(g.x + 4, W - 13);
+    x.strokeStyle = `rgba(255,255,255,${(.25*a).toFixed(3)})`;
+    x.lineWidth = .6;
+    x.beginPath(); x.moveTo(g.x, g.y); x.lineTo(lx - 1, g.y); x.stroke();
+    x.fillStyle = `rgba(255,255,255,${(.72*a).toFixed(3)})`;
+    x.fillText(g.k, lx, g.y + 3);
+  });
+}
+
+/* 把最後一幕重畫成靜圖給報告書用：影像 + 真的輪廓 + 七個點 + 三條高度線 */
+function stillOfResult(P, res){
+  const c = document.createElement("canvas");
+  c.width = P.w; c.height = P.h;
+  const x = c.getContext("2d");
+  const q = P.w/res.size[0];
+  const m = ([a, b]) => [a*q, b*q];
+  x.fillStyle = "#000"; x.fillRect(0, 0, P.w, P.h);
+  x.globalAlpha = .62; x.drawImage(P.gray, 0, 0);
+  x.globalAlpha = .28; x.drawImage(P.edge, 0, 0);
+  x.globalAlpha = 1;
+  x.font = '10px "IBM Plex Mono", monospace'; x.textBaseline = "alphabetic";
+
+  (res.teeth || []).forEach((t, k) => {
+    const good = t.ok;
+    x.setLineDash(good ? [] : [4, 4]);
+    x.strokeStyle = good ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.34)";
+    x.lineWidth = good ? 1.6 : 1;
+    pathOf(x, t.poly, m); x.stroke();
+    x.setLineDash([]);
+
+    /* 標上編號，對應左邊清單的「牙 1」「牙 2」 */
+    const top = t.poly.reduce((a, b) => (b[1] < a[1] ? b : a));
+    const [tx, ty] = m(top);
+    x.textAlign = "center";
+    x.fillStyle = good ? "#fff" : "rgba(255,255,255,.45)";
+    x.font = 'bold 12px "IBM Plex Mono", monospace';
+    x.fillText(`#${k + 1}`, tx, ty - 7);
+    x.font = '10px "IBM Plex Mono", monospace';
+    x.textAlign = "left";
+    if(!good) return;
+
+    if(t.axis){
+      const [a1, b1] = m(t.axis[0]), [a2, b2] = m(t.axis[1]);
+      x.strokeStyle = "rgba(255,255,255,.34)"; x.lineWidth = .8;
+      x.beginPath(); x.moveTo(a1, b1); x.lineTo(a2, b2); x.stroke();
+    }
+    drawLevels(x, t, m, 1, true, P.w);
+
+    x.textAlign = "left";
+    PT_ORDER.forEach(key => {
+      const pt = t.pts[key]; if(!pt) return;
+      const [a, b] = m(pt);
+      x.fillStyle = "#fff"; x.beginPath(); x.arc(a, b, 2.6, 0, 6.2832); x.fill();
+      x.fillStyle = "rgba(255,255,255,.75)"; x.fillText(key, a + 5, b - 4);
+    });
+
+  });
+  return c.toDataURL("image/webp", .9);
+}
+
+/* ── 六幕：前三幕是這張影像自己的處理，後三幕畫模型真的回來的東西 ── */
+const PH = [
+  {n:"DEVELOP", ms:840,  draw(P, e, p){
+      const y = F.y + F.h*e;
+      base(P, 1, 0);
+      ctx.fillStyle = "#000"; ctx.fillRect(F.x - 1, y, F.w + 2, F.y + F.h - y + 2);
+      const g = ctx.createLinearGradient(0, y - 30, 0, y);
+      g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,.20)");
+      ctx.fillStyle = g; ctx.fillRect(F.x, y - 30, F.w, 30);
+      ctx.fillStyle = "#fff"; ctx.fillRect(F.x, y - .8, F.w, 1.6);
+      ctx.fillStyle = `rgba(0,0,0,${(.20*(1 - e)).toFixed(3)})`;
+      for(let yy = F.y; yy < y; yy += 3) ctx.fillRect(F.x, yy, F.w, 1);
+      ticks(.45*e);
+      mono(`${P.src[0]}×${P.src[1]}`, F.x, F.y - 8, 11, .5);
+  }},
+  {n:"RASTER", ms:820, draw(P, e){
+      const bx = F.x + F.w*e;
+      base(P, 1, 0);
+      ctx.save(); ctx.beginPath(); ctx.rect(bx, F.y, F.x + F.w - bx + 1, F.h); ctx.clip();
+      ctx.drawImage(P.half, F.x, F.y, F.w, F.h); ctx.restore();
+      const g = ctx.createLinearGradient(bx, 0, bx + 40, 0);
+      g.addColorStop(0, "rgba(255,255,255,.26)"); g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g; ctx.fillRect(bx, F.y, 40, F.h);
+      ctx.fillStyle = "#fff"; ctx.fillRect(bx - .8, F.y, 1.6, F.h);
+      ticks(.45);
+      mono(`halftone ${P.step}px · ${P.cells} cells`, F.x, F.y - 8, 11, .5);
+  }},
+  {n:"SOBEL", ms:920, draw(P, e, p){
+      base(P, 1 - .82*e, e);
+      const sy = F.y + ((p*1.7) % 1)*F.h;
+      ctx.save(); ctx.beginPath(); ctx.rect(F.x, sy - 48, F.w, 96); ctx.clip();
+      ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .8;
+      ctx.drawImage(P.edge, F.x, F.y, F.w, F.h);
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.restore();
+      ctx.fillStyle = "rgba(255,255,255,.30)"; ctx.fillRect(F.x, sy, F.w, 1);
+      ticks(.45);
+      mono(`|∇| p95 = ${P.p95}`, F.x, F.y - 8, 11, .5);
+  }},
+  /* 以下三幕吃 P.res（模型回來的東西），沒有就不會被排進時間軸 */
+  {n:"DETECT", ms:900, real:true, draw(P, e, p){
+      base(P, .30, .40);
+      const m = mapper(P, P.res), off = (1 - e)*Math.max(F.w, F.h)*.22;
+      const a = Math.min(1, e*1.5);
+      P.res.teeth.forEach(t => {
+        const q = t.obb.map(m);
+        const cx = q.reduce((s, v) => s + v[0], 0)/4, cy = q.reduce((s, v) => s + v[1], 0)/4;
+        ctx.strokeStyle = `rgba(255,255,255,${(a*(t.ok ? .95 : .45)).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(t.ok ? [] : [5, 5]);
+        ctx.beginPath();
+        q.forEach(([x, y], i) => {
+          const px = cx + (x - cx)*(1 + off/120), py = cy + (y - cy)*(1 + off/120);
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        });
+        ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+      });
+      ticks(.45);
+      mono(`mask r-cnn → ${P.res.teeth.length} obb`, F.x, F.y - 8, 11, .5);
+  }},
+  {n:"SEGMENT", ms:1000, real:true, draw(P, e, p){
+      base(P, .26, .30);
+      const m = mapper(P, P.res);
+      P.res.teeth.forEach(t => {
+        /* 輪廓照著周長一段一段描出來，跟 Demo 那頁的牙齒同一種畫法 */
+        const pts = t.poly.map(m);
+        let per = 0;
+        for(let k = 1; k < pts.length; k++) per += Math.hypot(pts[k][0] - pts[k-1][0], pts[k][1] - pts[k-1][1]);
+        const want = per*e;
+        ctx.strokeStyle = t.ok ? "rgba(255,255,255,.98)" : "rgba(255,255,255,.4)";
+        ctx.lineWidth = t.ok ? 1.8 : 1;
+        ctx.setLineDash(t.ok ? [] : [5, 5]);
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        let run = 0;
+        for(let k = 1; k < pts.length && run < want; k++){
+          ctx.lineTo(pts[k][0], pts[k][1]);
+          run += Math.hypot(pts[k][0] - pts[k-1][0], pts[k][1] - pts[k-1][1]);
+        }
+        ctx.stroke(); ctx.setLineDash([]);
+      });
+      ticks(.45);
+      mono(`hrnet-w32 ×${P.res.folds} → 邊界`, F.x, F.y - 8, 11, .5);
+  }},
+  {n:"MEASURE", ms:1500, real:true, draw(P, e, p){
+      base(P, .26, .26);
+      const m = mapper(P, P.res);
+      P.res.teeth.forEach((t, ti) => {
+        const pts = t.poly.map(m);
+        ctx.strokeStyle = t.ok ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.3)";
+        ctx.lineWidth = t.ok ? 1.6 : 1;
+        ctx.setLineDash(t.ok ? [] : [5, 5]);
+        ctx.beginPath(); pts.forEach(([x, y], k) => k ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+        ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+        if(!t.ok){
+          const c0 = m(t.obb[0]);
+          mono("量不出", c0[0], c0[1] - 6, 10.5, .5);
+          return;
+        }
+        /* 七個點一個一個亮起來，看得出先找到哪些、再找到哪些 */
+        PT_ORDER.forEach((key, gi) => {
+          const pt = t.pts[key]; if(!pt) return;
+          const v = eo(seg(p, .06 + gi*.085, .16 + gi*.085));
+          if(v <= 0) return;
+          const [a, b] = m(pt);
+          ctx.fillStyle = `rgba(255,255,255,${v.toFixed(3)})`;
+          ctx.beginPath(); ctx.arc(a, b, 2.2 + 1.6*(1 - v), 0, 6.2832); ctx.fill();
+          if(v > .7) mono(key, a + 6, b - 5, 10.5, (v - .7)/.3*.8);
+        });
+        const lvv = eo(seg(p, .66, .88));
+        if(lvv > 0){
+          if(t.axis){
+            const [a1, b1] = m(t.axis[0]), [a2, b2] = m(t.axis[1]);
+            ctx.strokeStyle = `rgba(255,255,255,${(.34*lvv).toFixed(3)})`; ctx.lineWidth = .9;
+            ctx.beginPath(); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); ctx.stroke();
+          }
+          ctx.font = '10.5px "IBM Plex Mono", monospace'; ctx.textBaseline = "alphabetic";
+          drawLevels(ctx, t, m, lvv, lvv > .55, F.x + F.w);
+        }
+        const nv = eo(seg(p, .8, 1));
+        if(nv > 0){
+          const [ax, ay] = m(t.pts.A || t.poly[0]);
+          mono(`CRR ${(t.crr*nv).toFixed(3)}`, ax + 9, ay - 13, 11, .9*nv);
+        }
+      });
+      ticks(.45);
+      const good = okTeeth(P.res).length;
+      mono(`${good} / ${P.res.teeth.length} 顆量得出指標`, F.x, F.y - 8, 11, .5);
+  }}
+];
+
+/* ── 整批跑完 ── */
+let running = false;
+async function runBatch(i, keys){
+  if(running) return;
+  running = true; busy = true;
+  const s = SLOT[i], list = keys.map(k => s.items[k]);
+  show("scRun");
+  lg.innerHTML = ""; strip.innerHTML = "";
+  $("#rDone").classList.remove("on");
+  $("#pFill").style.width = "0%"; $("#rPct").textContent = "0%";
+  const sths = list.map(it => {
+    const d = document.createElement("div");
+    d.className = "sthumb";
+    d.innerHTML = `<img src="${it.url}" alt="">`;
+    strip.appendChild(d);
+    return d;
+  });
+  fitCanvas();
+  standby();
+  await sleep(520);
+  fitCanvas(); standby();
+  t0 = performance.now();
+  log("batch", `${tagOf(i)} · ${list.length} img`);
+
+  /* 先找到推論服務，不然跑完三段動畫才一張張失敗，很浪費時間也看不懂 */
+  $("#rPhase").textContent = "CONNECT";
+  const base = await findAPI();
+  let health = null;
+  if(base !== null){
+    try { health = await (await fetch(base + "/api/health", {cache:"no-store"})).json(); }
+    catch(e){ /* 下面統一處理 */ }
+  }
+  if(!health || !health.ok){
+    log("halt", "找不到推論服務");
+    $("#rPhase").textContent = "—";
+    $("#rDoneBig").textContent = "找不到推論服務";
+    $("#rDoneSub").textContent = "先在電腦上跑 server/run-local.sh";
+    $("#rDone").classList.add("on");
+    await sleep(3000);
+    $("#rDoneSub").textContent = "returning to vault";
+    show("scPick");
+    running = false; busy = false;
+    return;
+  }
+  log("api", `${base || "同源"} · ${health.folds} 折 · ${health.threads} 執行緒`);
+
+  const out = [];
+  const sp = clamp(4.6/list.length, .42, 1);
+  const total = list.length*PH.length;
+  let step = 0;
+  const bump = () => {
+    const pc = Math.round(++step/total*100);
+    $("#pFill").style.width = pc + "%"; $("#rPct").textContent = pc + "%";
+  };
+
+  for(let n = 0; n < list.length; n++){
+    const it = list[n];
+    sths.forEach((d, k) => d.classList.toggle("now", k === n));
+    $("#rIdx").textContent = String(n + 1).padStart(2, "0") + " / " + String(list.length).padStart(2, "0");
+    $("#rName").textContent = it.name;
+    const m0 = performance.now();
+
+    /* 推論比動畫久得多，所以一進這張圖就先送出去，讓前三幕跟它並行 */
+    const job = predictOf(it).then(r => ({r}), e => ({e}));
+
+    let P;
+    try { P = await prep(it.url); }
+    catch(e){
+      log("skip", it.name);
+      sths[n].classList.remove("now");
+      step += PH.length; bump(); step--;
+      continue;
+    }
+    fitCanvas(); setFit(P);
+    log("open", `${P.src[0]}×${P.src[1]}  mean ${P.mean}`);
+
+    for(const ph of PH.filter(x => !x.real)){
+      $("#rPhase").textContent = ph.n;
+      if(ph.n === "RASTER") log("dot", `${P.step}px  ${P.cells} cells`);
+      if(ph.n === "SOBEL")  log("sobel", `3×3  p95 ${P.p95}`);
+      await T(ph.ms*sp, (e, p) => ph.draw(P, e, p), eio);
+      bump();
+    }
+
+    /* 模型還沒回來就在這裡等，掃描線一直跑，不要讓畫面停住 */
+    $("#rPhase").textContent = "INFER";
+    log("infer", "mask r-cnn + hrnet…");
+    let settled = false;
+    job.then(() => { settled = true; });
+    const tw = performance.now();
+    while(!settled){
+      await T(900, (e, p) => PH[2].draw(P, 1, p), q => q);
+      if(performance.now() - tw > 180000) break;      /* 三分鐘還沒回來就放棄等 */
+    }
+    const {r: res, e: err} = await job;
+
+    if(err || !res){
+      log("fail", String(err && err.message || err).slice(0, 46));
+      out.push({name:it.name, url:it.url, err:String(err && err.message || err),
+                ms:Math.round(performance.now() - m0)});
+      sths[n].classList.remove("now"); sths[n].classList.add("bad");
+      step += 3; bump(); step--;
+    }else{
+      P.res = res;
+      log("obb", `${res.teeth.length} 顆  ${res.ms} ms`);
+      for(const ph of PH.filter(x => x.real)){
+        $("#rPhase").textContent = ph.n;
+        if(ph.n === "MEASURE") log("measure", `${okTeeth(res).length} / ${res.teeth.length} 量得出`);
+        await T(ph.ms*sp, (e, p) => ph.draw(P, e, p), eio);
+        bump();
+      }
+      log("done", Math.round(performance.now() - m0) + " ms");
+      sths[n].classList.remove("now"); sths[n].classList.add("ok");
+      out.push({name:it.name, url:it.url, shot:stillOfResult(P, res),
+                size:res.size, scale:res.scale, folds:res.folds,
+                teeth:res.teeth, serverMs:res.ms,
+                src:P.src, mean:P.mean, p95:P.p95,
+                ms:Math.round(performance.now() - m0)});
+    }
+
+    if(n < list.length - 1){
+      await T(260*sp, e => {
+        ctx.globalAlpha = 1 - e; ctx.drawImage(cv, 0, 0, CW, CH);
+        ctx.clearRect(0, 0, CW, CH);
+        ctx.globalAlpha = 1;
+        const x = CW*e;
+        ctx.fillStyle = "#fff"; ctx.fillRect(x - 1.2, 0, 2.4, CH);
+      }, p => p);
+      ctx.clearRect(0, 0, CW, CH);
+    }
+  }
+
+  $("#rPhase").textContent = "—";
+  const tot = out.reduce((a, r) => a + okTeeth(r).length, 0);
+  $("#rDoneBig").textContent = `${list.length} 張 · 量出 ${tot} 顆`;
+  $("#rDone").classList.add("on");
+  await sleep(1150);
+
+  show("scVault");
+  s.results = out;
+  s.done = true;
+  VAULT.push(i);                       /* 不等它：存不存得進去都不該卡住動畫 */
+  refreshCell(i);
+  const note = cellEl(i).querySelector(".note");
+  note.classList.remove("drop"); void note.offsetWidth;
+  await sleep(320);
+  note.classList.add("drop");
+  running = false; busy = false;
+}
+
+/* ═══════════ 畫面四：全方位診斷報告書 ═══════════
+   版型與展開順序跟 demo.html 那張是同一份；差別只在這裡沒有捲軸可用，
+   所以進場後用一段 3.2 秒的時間軸把同一個 paintSheet(p) 從 0 推到 1。 */
+/* 三個指標各自的危險值 */
+const CEIL = {crr:1.00, ablr:0.33, bcrr:1.50};
+
+/* 風險程度：三條指標各自跟「會變紅的危險值」相比，
+   沒超標的乘 10、超標的乘 20，三條相加（上限 100）。
+   跨過危險線權重加倍，所以健康的牙最多 30，一旦超標就跳上去。
+   例：ABLR 0.524 / 0.33 = 1.59 倍，超標 → 1.59 × 20 = 31.8 */
+function riskOf(v){
+  let r = 0;
+  for(const k of ["crr", "ablr", "bcrr"]){
+    const ratio = v[k]/CEIL[k];
+    r += ratio * (ratio > 1 ? 20 : 10);
+  }
+  return clamp(r/100, 0, 1);
+}
+const T0 = {crr:0.4414, ablr:0.3169, bcrr:1.1100};
+const BATCHES = [
+  {id:"113", name:"113 · 下顎右側", teeth:[
+    {no:"#45", crr:T0.crr, ablr:T0.ablr, bcrr:T0.bcrr, conf:.97}]},
+  {id:"A-0312", name:"批次 A · 0312", teeth:[
+    {no:"#14", crr:.412, ablr:.186, bcrr:.735, conf:.96},
+    {no:"#15", crr:.455, ablr:.204, bcrr:.828, conf:.94},
+    {no:"#24", crr:.503, ablr:.231, bcrr:.955, conf:.93}]},
+  {id:"A-0319", name:"批次 A · 0319", teeth:[
+    {no:"#34", crr:.618, ablr:.352, bcrr:1.497, conf:.92},
+    {no:"#35", crr:.574, ablr:.298, bcrr:1.243, conf:.95}]},
+  {id:"B-0402", name:"批次 B · 0402", teeth:[
+    {no:"#44", crr:.386, ablr:.163, bcrr:.656, conf:.98},
+    {no:"#45", crr:.409, ablr:.175, bcrr:.708, conf:.97},
+    {no:"#46", crr:.437, ablr:.191, bcrr:.775, conf:.96}]},
+  {id:"B-0417", name:"批次 B · 0417", teeth:[
+    {no:"#25", crr:.742, ablr:.468, bcrr:2.274, conf:.91},
+    {no:"#26", crr:.815, ablr:.521, bcrr:2.789, conf:.89}]},
+  {id:"C-0508", name:"批次 C · 0508", teeth:[
+    {no:"#15", crr:.531, ablr:.244, bcrr:1.026, conf:.95},
+    {no:"#16", crr:.487, ablr:.219, bcrr:.905, conf:.96},
+    {no:"#17", crr:.562, ablr:.277, bcrr:1.161, conf:.93}]},
+  {id:"C-0521", name:"批次 C · 0521", teeth:[
+    {no:"#33", crr:.348, ablr:.152, bcrr:.590, conf:.98},
+    {no:"#34", crr:.371, ablr:.168, bcrr:.648, conf:.97}]},
+  {id:"D-0604", name:"批次 D · 0604", teeth:[
+    {no:"#36", crr:1.062, ablr:.604, bcrr:4.207, conf:.87},
+    {no:"#37", crr:.938, ablr:.556, bcrr:3.365, conf:.88}]},
+];
+
+const folders = $("#folders"), shTitle = $("#shTitle");
+const filesHd = document.querySelector(".files h4");
+
+const CUR = {crr:0, ablr:0, bcrr:0, conf:0, risk:0, na:false, note:"",
+             avg:{crr:0, ablr:0, bcrr:0}};
+const RING_R = 38, RING_C = 2*Math.PI*RING_R;
+const ringMarkup = () =>
+  `<circle cx="50" cy="50" r="${RING_R}" fill="none" stroke="#fff"
+      stroke-opacity=".28" stroke-width="6"/>
+    <circle class="arc" cx="50" cy="50" r="${RING_R}" fill="none" stroke="#fff"
+      stroke-width="6" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}"
+      transform="rotate(-90 50 50)"/>
+    <text class="rv" x="50" y="50" text-anchor="middle" dominant-baseline="central"
+      font-family="Archivo,sans-serif" font-weight="700" font-size="22" fill="#fff">0</text>`;
+dConf.innerHTML = ringMarkup(); dRisk.innerHTML = ringMarkup();
+
+function barChart(avg){
+  const keys = ["crr", "ablr", "bcrr"], names = ["CRR", "ABLR", "B-CRR"];
+  /* 超過危險值的長條會長到框外（最多 1.4 倍），TOP 要留得夠高，
+     不然數字會被切掉——真實資料裡 B-CRR 衝到 7.4 是常有的事 */
+  const X0 = 42, W = 70, GAP = 24, TOP = 56, H = 96;
+  let h = `<rect class="frame" x="${X0 - 14}" y="${TOP}" width="${3*W + 2*GAP + 28}" height="${H}"
+          fill="none" stroke="#fff" stroke-dasharray="5 5"/>`;
+  keys.forEach((k, i) => {
+    const ratio = avg[k]/CEIL[k], hh = Math.min(ratio, 1.4)*H;
+    const col = ratio > 1 ? "#E0564A" : ratio > .7 ? "#E5A34F" : "#5FD3A6";
+    const x = X0 + i*(W + GAP), y = TOP + H - hh;
+    h += `<rect class="bar" x="${x}" y="${y}" width="${W}" height="${hh}" fill="${col}"
+          style="transform-box:fill-box;transform-origin:bottom"/>
+        <text class="barv" x="${x + W/2}" y="${y - 6}" text-anchor="middle" fill="#fff"
+          font-family="IBM Plex Mono,monospace" font-size="11">0.000</text>
+        <text class="barn" x="${x + W/2}" y="${TOP + H + 18}" text-anchor="middle" fill="#fff"
+          font-family="IBM Plex Mono,monospace" font-size="10"
+          letter-spacing="1">${names[i]}</text>`;
+  });
+  $("#bars").innerHTML = h;
+}
+
+function showTooth(bi, ti){
+  const b = BATCHES[bi], t = b.teeth[ti];
+  shTitle.textContent = `${b.name}　${t.no}`;
+  const cej = 131.9, apex = 336.5, alc = cej + (apex - cej)*clamp(t.ablr, 0, .9);
+  lAlc.setAttribute("y1", alc); lAlc.setAttribute("y2", alc);
+  tAlc.setAttribute("y", alc + 3);
+
+  const n = b.teeth.length;
+  for(const k of ["crr", "ablr", "bcrr"]) CUR.avg[k] = b.teeth.reduce((s, x) => s + x[k], 0)/n;
+  CUR.crr = t.crr; CUR.ablr = t.ablr; CUR.bcrr = t.bcrr;
+  CUR.na = false; CUR.note = "";
+  CUR.conf = b.teeth.reduce((s, x) => s + x.conf, 0)/n;
+  CUR.risk = riskOf(CUR.avg);
+  barChart(CUR.avg);
+
+  document.querySelectorAll(".kids button").forEach(x => x.classList.remove("on"));
+  document.querySelector(`.kids button[data-b="${bi}"][data-t="${ti}"]`)?.classList.add("on");
+  paintSheet(sheetP);
+}
+
+const sheetEl = $("#sheet"), toothOut = $("#toothOut");
+const TOOTH_LEN = toothOut.getTotalLength();
+toothOut.style.strokeDasharray = TOOTH_LEN;
+const lvls = [...sheetEl.querySelectorAll(".lvl")];
+const folds = [...sheetEl.querySelectorAll(".fold")];
+const mcards = [...sheetEl.querySelectorAll(".mrow > div:not(.pending)")];
+const pendingEl = sheetEl.querySelector(".pending");
+const mvals = [vCRR, vABLR, vBCRR];
+const shotBox = sheetEl.querySelector(".shotbox"), shotImg = $("#shotImg");
+let sheetP = 0, REAL = false;
+const pop = x => 1 - Math.pow(1 - x, 3);
+
+function paintSheet(p){
+  sheetP = p;
+  const f = pop(seg(p, .02, .16));
+  sheetEl.style.opacity = (.10 + .90*f).toFixed(3);
+  sheetEl.style.transform = `scale(${(.90 + .10*f + .012*Math.sin(f*Math.PI)).toFixed(4)})`;
+  sheetEl.classList.toggle("done", p > .985);
+
+  const set = (el, v, dy = 18) => { el.style.opacity = v.toFixed(3);
+    el.style.transform = `translateY(${((1 - v)*dy).toFixed(1)}px)`; };
+
+  set(sheetEl.querySelector(".sheet-hd"), pop(seg(p, .14, .22)), 14);
+  folds.forEach((el, i) => set(el, pop(seg(p, .20 + i*.014, .26 + i*.014)), 12));
+
+  const td = pop(seg(p, .30, .46));
+  if(REAL){
+    shotBox.style.opacity = td.toFixed(3);
+    shotBox.style.transform = `scale(${(.965 + .035*td).toFixed(4)})`;
+  }else{
+    toothOut.style.strokeDashoffset = TOOTH_LEN*(1 - td);
+    toothOut.style.opacity = td > 0 ? 1 : 0;
+    const lv = pop(seg(p, .44, .52));
+    lvls.forEach(el => el.style.opacity = lv.toFixed(3));
+  }
+
+  mcards.forEach((el, i) => {
+    const v = pop(seg(p, .56 + i*.045, .64 + i*.045));
+    set(el, v, 22);
+    /* 這顆量不出來就留白，不要湊一個數字上去 */
+    mvals[i].textContent = CUR.na ? "—"
+      : (([CUR.crr, CUR.ablr, CUR.bcrr][i])*v).toFixed(4);
+    mvals[i].classList.toggle("na", !!CUR.na);
+  });
+  if(pendingEl){
+    set(pendingEl, CUR.note ? pop(seg(p, .70, .80)) : 0, 10);
+    pendingEl.textContent = CUR.note || "";
+  }
+
+  const cf = pop(seg(p, .62, .70));
+  const bars = [...document.querySelectorAll("#bars .bar")];
+  const barv = [...document.querySelectorAll("#bars .barv")];
+  const barn = [...document.querySelectorAll("#bars .barn")];
+  document.querySelector("#bars .frame")?.setAttribute("opacity", cf);
+  bars.forEach((r, i) => {
+    const v = pop(seg(p, .68 + i*.055, .78 + i*.055));
+    r.style.transform = `scaleY(${v.toFixed(3)})`;
+    barv[i].setAttribute("opacity", v.toFixed(3));
+    barv[i].textContent = (CUR.avg[["crr", "ablr", "bcrr"][i]]*v).toFixed(3);
+    barn[i].setAttribute("opacity", cf.toFixed(3));
+  });
+
+  [[dConf, CUR.conf, .84], [dRisk, CUR.risk, .88]].forEach(([svg, val, a]) => {
+    const v = pop(seg(p, a, a + .11));
+    const arc = svg.querySelector(".arc"), tx = svg.querySelector(".rv");
+    arc.style.strokeDashoffset = RING_C*(1 - val*v);
+    tx.setAttribute("opacity", v.toFixed(3));
+    tx.textContent = Math.round(val*v*100);
+  });
+  [...document.querySelectorAll(".gauge b")].forEach((el, i) =>
+    el.style.opacity = pop(seg(p, .86 + i*.04, .96 + i*.04)).toFixed(3));
+}
+
+/* ── 真的跑過的那一箱：左邊列這一箱的檔名，中間放跑完標好的那張圖 ── */
+let realIdx = -1;
+
+function buildReal(i){
+  const res = SLOT[i].results || [];
+  REAL = true;
+  sheetEl.classList.add("real");
+  const fd = (res.find(f => f.folds) || {}).folds;
+  $("#shTag").textContent = fd ? `模型輸出 · ${fd} 折集成` : "模型輸出";
+  filesHd.textContent = "Files";
+  folders.innerHTML = "";
+  res.forEach((f, fi) => {
+    const teeth = f.teeth || [];
+    const d = document.createElement("div");
+    d.className = "fold" + (fi ? "" : " open");
+    const kids = f.err
+      ? `<button class="dead">推論失敗<span>—</span></button>`
+      : teeth.map((t, ti) =>
+          `<button data-f="${fi}" data-t="${ti}"${fi === 0 && ti === 0 ? ' class="on"' : ''}>牙 ${ti + 1}
+            <span>${t.ok ? t.bcrr.toFixed(3) : "—"}</span></button>`).join("");
+    d.innerHTML = `<button><span class="ar">▶</span>${f.name}<span class="n">${
+      f.err ? "!" : okTeeth(f).length + "/" + teeth.length}</span></button>
+      <div class="kids">${kids}</div>`;
+    d.querySelector(":scope > button").onclick = () => d.classList.toggle("open");
+    folders.appendChild(d);
+  });
+  const first = res.findIndex(f => !f.err);
+  showShot(i, first < 0 ? 0 : first, 0);
+}
+
+function showShot(i, fi, ti){
+  const res = SLOT[i].results || [], f = res[fi];
+  if(!f) return;
+  const teeth = f.teeth || [], t = teeth[ti];
+  shotImg.src = f.shot || "";
+  shotImg.style.visibility = f.shot ? "visible" : "hidden";
+  shTitle.textContent = `保險箱 ${tagOf(i)}　${f.name}` + (t ? `　牙 ${ti + 1}` : "");
+
+  if(t && t.ok){
+    CUR.crr = t.crr; CUR.ablr = t.ablr; CUR.bcrr = t.bcrr; CUR.na = false;
+    /* CRR 是冠根比，負的或大於 1.5 在生理上說不通——照實講，不要當成正常值 */
+    CUR.note = sane(t) ? ""
+      : `這顆的 CRR 是 ${t.crr.toFixed(3)}，落在生理上說不通的範圍，量測結果不可信。`;
+  }else{
+    CUR.crr = CUR.ablr = CUR.bcrr = 0; CUR.na = true;
+    CUR.note = f.err ? `這張推論失敗：${f.err}`
+      : t ? `這顆量不出指標：${t.why}`
+          : "這張沒有偵測到牙齒。";
+  }
+
+  /* 長條圖與兩個圓環都跟著「當下選到的那一顆」，跟上面三張指標卡同一顆牙。
+     之前用整箱平均，結果點哪顆都長一樣，看起來像沒在算。 */
+  const live = t && t.ok;
+  for(const k of ["crr", "ablr", "bcrr"]) CUR.avg[k] = live ? t[k] : 0;
+  /* 信心不用偵測分數——那個永遠 0.99 以上。用伺服器算的量測可信度：
+     兩側牙冠外擴取較弱那側，越弱代表 CEJ 定得越不穩。 */
+  CUR.conf = t && typeof t.conf === "number" ? t.conf : 0;
+  CUR.risk = live ? riskOf(CUR.avg) : 0;
+  barChart(CUR.avg);
+
+  document.querySelectorAll(".kids button").forEach(x => x.classList.remove("on"));
+  document.querySelector(`.kids button[data-f="${fi}"][data-t="${ti}"]`)?.classList.add("on");
+  paintSheet(sheetP);
+}
+
+/* 沒有實際結果（或想看示範那張）時退回原本的示範批次 */
+function buildDemo(){
+  REAL = false;
+  sheetEl.classList.remove("real");
+  $("#shTag").textContent = "DEMO DATA";
+  filesHd.textContent = "Batches";
+  folders.innerHTML = "";
+  BATCHES.forEach((b, bi) => {
+    const d = document.createElement("div");
+    d.className = "fold" + (bi ? "" : " open");
+    d.innerHTML = `<button><span class="ar">▶</span>${b.name}<span class="n">${b.teeth.length}</span></button>
+      <div class="kids">${b.teeth.map((t, ti) =>
+        `<button data-b="${bi}" data-t="${ti}"${bi === 0 && ti === 0 ? ' class="on"' : ''}>${t.no}
+          <span>${t.bcrr.toFixed(3)}</span></button>`).join("")}</div>`;
+    d.querySelector(":scope > button").onclick = () => d.classList.toggle("open");
+    folders.appendChild(d);
+  });
+  showTooth(0, 0);
+}
+
+folders.addEventListener("click", e => {
+  const b = e.target.closest(".kids button");
+  if(!b) return;
+  if(REAL){ if(b.dataset.f !== undefined) showShot(openIdx, +b.dataset.f, +b.dataset.t); }
+  else showTooth(+b.dataset.b, +b.dataset.t);
+});
+$("#shBack").onclick = () => show("scVault");
+buildDemo();
+paintSheet(0);
+
+/* 已經跑完的保險箱：一樣開門，然後直接攤開報告書 */
+async function enterReport(i){
+  try{ if(REMOTE && DK) await ensureSlot(i); }
+  catch(err){ alert("影像解密失敗：" + err.message); return; }
+  openIdx = i; busy = true;
+  await openSeq(i);
+  (SLOT[i].results && SLOT[i].results.length) ? buildReal(i) : buildDemo();
+  paintSheet(0);
+  show("scSheet");
+  await sleep(300);
+  doorEl.classList.remove("on");
+  await sleep(240);
+  await T(3200, p => paintSheet(p), p => p);
+  busy = false;
+}
+
+/* ═══════════ 開場 ═══════════
+   第一次進這一頁先放那段開門的影片，跑完淡掉就是保險庫。
+   同一個分頁只放一次，動畫關掉的人直接跳過；影片掛掉也不能把人卡在黑畫面。 */
+(() => {
+  const intro = $("#intro"), v = $("#introV");
+  if(!intro) return;
+  const seen = () => { try { return sessionStorage.getItem("vaultIntro") === "1"; }
+                       catch(e) { return false; } };
+  const kill = (persist = true) => {
+    if(persist) { try { sessionStorage.setItem("vaultIntro", "1"); } catch(e) {} }
+    intro.remove();
+  };
+  if(RM || seen()) return kill();
+
+  let done = false;
+  const out = (persist = true) => {
+    if(done) return;
+    done = true;
+    intro.classList.add("out");
+    setTimeout(() => kill(persist), 950);
+  };
+  v.addEventListener("ended", () => out());
+  v.addEventListener("error", () => out());
+  intro.addEventListener("click", () => out());
+  addEventListener("keydown", () => out(), {once:true});
+  setTimeout(() => out(), 9000);               /* 保險絲：影片沒動也會放行 */
+  const pr = v.play();
+  /* 分頁在背景、或省電模式擋掉自動播放：安靜讓路，但不要記成「看過了」，
+     下次在前景開這頁還有機會播 */
+  if(pr && pr.catch) pr.catch(() => out(false));
+})();
+
+addEventListener("resize", () => { if($("#scRun").classList.contains("on")) fitCanvas(); });
+SLOT.forEach((_, i) => refreshCell(i));
+</script>

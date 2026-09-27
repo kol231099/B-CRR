@@ -1,0 +1,17 @@
+# CRR_PA runtime dependencies
+#
+# Versions are pinned so results stay reproducible for the thesis. If a
+# teammate is on a different Python version and a wheel is unavailable,
+# loosen the pin to >= rather than leaving it unspecified.
+#
+# Developed and measured on Python 3.13.1.
+
+numpy==2.2.2
+opencv-python==4.11.0
+matplotlib==3.10.0
+
+# Annotation is done in labelme (the .json files under labeled_PA/ were written
+# by version 5.2.1). It is a separate GUI tool, not imported by anything in
+# scripts/, so install it only if you need to create or edit annotations:
+#
+#     pip install labelme==5.2.1

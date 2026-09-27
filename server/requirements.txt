@@ -1,0 +1,17 @@
+# CPU-only：在 Linux 上一定要指定 cpu index，否則會抓到 ~2.5 GB 的 CUDA 版
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0
+torchvision==0.23.0
+numpy<2.3
+opencv-python-headless==4.11.0.86
+segmentation-models-pytorch==0.4.0
+timm==1.0.15
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+scipy
+# 簽章 cookie 用；純 Python，沒有編譯相依
+itsdangerous==2.2.0
+
+# 保險庫影像落地加密（AES-256-GCM）
+cryptography==44.0.0

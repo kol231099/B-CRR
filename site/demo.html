@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000">
+<title>B-CRR Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:wght@400&display=swap">
+<style>
+:root{ --gn:#5FD3A6; --or:#E5A34F; --rd:#E0564A;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --out:cubic-bezier(.16,1,.3,1);        /* 收得很穩的減速 */
+  --spring:cubic-bezier(.32,1.12,.5,1);  /* 末端帶一點回彈 */ }
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#000;color:#fff;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* 分頁列 */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:70;display:flex;align-items:center;
+  gap:1.4rem;padding:.7rem 22px;background:rgba(0,0,0,.8);backdrop-filter:blur(14px);
+  border-bottom:1px solid #fff}
+.topbar .brand{font-family:Archivo,sans-serif;font-weight:700;font-size:.95rem;
+  letter-spacing:-.02em;margin-right:auto}
+.topbar a{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#fff;text-decoration:none;opacity:.55;
+  padding:.35rem .1rem;border-bottom:1px solid transparent;transition:.3s}
+.topbar a:hover{opacity:1}
+.topbar a.on{opacity:1;border-bottom-color:#fff}
+
+/* ── 一鏡到底：蛻皮 → 推近 → 點亮 → 推到左邊講三個指標 ── */
+#act{position:relative;height:2800svh}
+.stage{position:sticky;top:0;height:100svh;display:grid;place-items:center;
+  padding:4.6rem 22px 3rem;overflow:hidden}
+#sv{overflow:visible;will-change:transform;
+  width:min(94vw,72rem,calc((100svh - 10rem) * 1.418));height:auto}
+#cam,#camImg{will-change:transform}
+#sv .box,#sv .outl{fill:none;stroke:#fff;stroke-width:calc(1.6px * var(--k,1));
+  stroke-linejoin:round}
+#sv .axis{stroke:#fff;stroke-width:calc(.9px * var(--k,1));opacity:0}
+#sv .halo{fill:url(#hg)}
+#sv .glow{stroke:#fff;stroke-width:calc(6px * var(--k,1));stroke-linecap:round;
+  filter:blur(9px);opacity:0}
+#sv .beam{stroke:#fff;stroke-width:calc(2.6px * var(--k,1));stroke-linecap:round;
+  filter:blur(3px);opacity:0}
+#sv .seg{stroke:#fff;stroke-width:calc(1.2px * var(--k,1));stroke-linecap:round;opacity:0}
+#sv text{font-family:"IBM Plex Mono",monospace;font-size:calc(13px * var(--k,1));
+  font-weight:500;fill:#fff;paint-order:stroke;stroke:#000;
+  stroke-width:calc(3px * var(--k,1));stroke-linejoin:round}
+
+.mpanel{position:absolute;right:clamp(22px,5vw,4rem);top:7rem;bottom:4.5rem;
+  width:min(42vw,34rem);display:flex;flex-direction:column;justify-content:space-between;
+  align-items:flex-end;text-align:right;opacity:0;pointer-events:none}
+.mname{font-family:Archivo,sans-serif;font-weight:700;letter-spacing:-.04em;
+  font-size:clamp(3rem,9vw,7rem);line-height:.92}
+.msub{font-size:.9rem;opacity:.65;margin-top:.3rem}
+.mval{font-family:"IBM Plex Mono",monospace;font-size:clamp(1.4rem,3.4vw,2.4rem);
+  letter-spacing:-.02em;margin-top:1.1rem}
+.mform{font-family:"IBM Plex Mono",monospace;font-size:clamp(1rem,2.2vw,1.6rem);
+  border-top:1px solid #fff;padding-top:1rem;width:100%}
+
+/* ── 診斷書 ── */
+.sheetwrap{position:relative;height:340svh}
+.sheetStick{position:sticky;top:0;height:100svh;display:grid;place-items:center;
+  padding:4.6rem 22px 2rem}
+.sheet{width:min(96vw,84rem);border:1px solid #fff;background:#000;
+  display:grid;grid-template-columns:15rem 1fr;
+  /* 第二列一定要 minmax(0,1fr)，否則內容會把固定高度撐破再被裁掉 */
+  grid-template-rows:auto minmax(0,1fr);
+  height:min(46rem,calc(100svh - 6.4rem));overflow:hidden;
+  transform-origin:center;will-change:transform,opacity}
+/* 展開過程由捲動驅動，所以預設不下 transition；跑完才打開讓點選也有動畫 */
+.sheet.done .bar,.sheet.done .arc{transition:transform .8s var(--out),
+  stroke-dashoffset .9s var(--out)}
+.sheet-hd{grid-column:1/-1;display:flex;align-items:center;gap:.8rem;
+  padding:.85rem 1.2rem;border-bottom:1px solid #fff}
+.sheet-hd b{font-family:Archivo,sans-serif;font-size:.92rem;font-weight:600}
+.sheet-hd .who{font-family:"IBM Plex Mono",monospace;font-size:.74rem}
+.sheet-hd .tag{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.6rem;
+  letter-spacing:.18em;border:1px solid #fff;padding:.12rem .6rem}
+
+.files{border-right:1px solid #fff;padding:.8rem .7rem;display:flex;
+  flex-direction:column;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.files h4{margin:.2rem .4rem .6rem;font-family:"IBM Plex Mono",monospace;font-size:.62rem;
+  letter-spacing:.18em;text-transform:uppercase;font-weight:400;opacity:.6}
+.fold>button{width:100%;display:flex;align-items:center;gap:.5rem;background:none;border:0;
+  color:#fff;font:inherit;font-size:.8rem;text-align:left;padding:.4rem .45rem;cursor:pointer}
+.fold>button:hover{background:#151515}
+.fold .ar{font-family:monospace;font-size:.6rem;transition:transform .25s;opacity:.7}
+.fold.open .ar{transform:rotate(90deg);opacity:1}
+.fold .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.66rem;opacity:.6}
+.kids{display:none;padding:.1rem 0 .35rem .9rem;flex-direction:column}
+.fold.open .kids{display:flex}
+.kids button{background:none;border:0;border-left:1px solid transparent;color:#fff;
+  font:inherit;font-size:.76rem;text-align:left;padding:.28rem .45rem;cursor:pointer;
+  display:flex;gap:.5rem;opacity:.6}
+.kids button:hover{opacity:1}
+.kids button.on{opacity:1;border-left-color:#fff;background:#151515}
+.kids button span{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.68rem}
+
+.body{display:grid;grid-template-columns:minmax(0,15rem) 1fr;gap:1.4rem;
+  padding:1.3rem;min-height:0}
+.toothbox{display:flex;flex-direction:column;justify-content:center;min-height:0}
+.toothbox svg{width:100%;height:auto;max-height:100%;margin:0 auto}
+
+.right{display:grid;grid-template-rows:auto minmax(0,1fr);gap:1.1rem;
+  min-width:0;min-height:0}
+.mrow{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #fff}
+.mrow div{padding:.85rem .95rem;border-right:1px solid #fff}
+.mrow div:last-child{border-right:0}
+.mrow b{display:block;font-family:"IBM Plex Mono",monospace;font-size:.64rem;
+  letter-spacing:.14em;opacity:.6}
+.mrow s{display:block;text-decoration:none;font-family:Archivo,sans-serif;
+  font-size:clamp(1.2rem,2.4vw,1.75rem);font-weight:700;letter-spacing:-.02em;
+  margin-top:.15rem;font-variant-numeric:tabular-nums}
+.mrow em{font-style:normal;font-size:.7rem;opacity:.55}
+.lower{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:1.1rem;min-height:0}
+.chart{border:1px solid #fff;padding:1rem;display:flex;min-height:0}
+.chart svg{width:100%;flex:1;min-height:0}
+.dials{display:flex;gap:1rem;justify-content:flex-end}
+.dial{width:8.4rem;border:1px solid #fff;padding:.8rem;display:flex;
+  flex-direction:column;align-items:center;gap:.4rem}
+.dial svg{width:5.4rem;height:5.4rem}
+.dial b{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.14em}
+
+/* ── 準確度 ── */
+.acc{position:relative;height:260svh}
+.accStick{position:sticky;top:0;height:100svh;display:grid;place-items:center}
+.accgrid{max-width:74rem;margin:0 auto;padding:0 22px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:2rem}
+.accgrid figure{margin:0;text-align:center}
+.accgrid b{display:block;font-family:"Playfair Display",Georgia,serif;font-weight:400;
+  font-size:clamp(2.6rem,7vw,5.4rem);line-height:1;color:#fff;
+  font-variant-numeric:tabular-nums;will-change:opacity,transform}
+.accgrid figcaption{margin-top:1rem;font-family:"IBM Plex Mono",monospace;font-size:.66rem;
+  letter-spacing:.22em;text-transform:uppercase;opacity:.6}
+
+/* ── CTA ── */
+.cta{padding:clamp(4rem,9vw,7rem) 0 clamp(6rem,12vw,10rem);display:grid;place-items:center}
+#goRun{font-family:Archivo,sans-serif;font-weight:700;letter-spacing:-.02em;
+  font-size:clamp(1.5rem,4.2vw,2.8rem);color:#000;background:#fff;border:1px solid #fff;
+  padding:.62em 1.25em;cursor:pointer;transition:.25s var(--ease)}
+#goRun:hover{background:#000;color:#fff}
+
+@media (max-width:1080px){.sheet{grid-template-columns:12rem 1fr}
+  .body{grid-template-columns:minmax(0,11rem) 1fr}.dial{width:7rem}}
+@media (max-width:860px){
+  .mpanel{position:static;width:100%;align-items:flex-start;text-align:left}
+  .sheet{grid-template-columns:1fr}
+  .files{border-right:0;border-bottom:1px solid #fff}
+  .body{grid-template-columns:1fr}
+  .accgrid{grid-template-columns:repeat(2,1fr);gap:2.4rem}
+}
+</style>
+
+<nav class="topbar">
+  <div class="brand">B-CRR.</div>
+  <a href="index.html">首頁</a>
+  <a href="demo.html" class="on">Demo</a>
+  <a href="vault.html">保險庫</a>
+</nav>
+
+<section id="act">
+  <div class="stage">
+    <svg id="sv" viewBox="0 0 787 555" preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="根尖片上逐步顯現旋轉框、牙齒邊界、七個解剖特徵點與三個指標">
+      <defs>
+        <radialGradient id="hg">
+          <stop offset="0"   stop-color="#fff" stop-opacity=".95"/>
+          <stop offset=".32" stop-color="#fff" stop-opacity=".5"/>
+          <stop offset="1"   stop-color="#fff" stop-opacity="0"/>
+        </radialGradient>
+        <mask id="mBox"><g id="gBox"></g></mask>
+        <mask id="mTooth"><g id="gTooth"></g></mask>
+      </defs>
+      <g id="camImg">
+        <image id="imFull"  href="img/pa113.webp?v=202609240153" x="0" y="0" width="787" height="555"/>
+        <image id="imBox"   href="img/pa113.webp?v=202609240153" x="0" y="0" width="787" height="555" mask="url(#mBox)"/>
+        <image id="imTooth" href="img/pa113.webp?v=202609240153" x="0" y="0" width="787" height="555" mask="url(#mTooth)"/>
+      </g>
+      <g id="cam">
+        <g id="boxes"></g><g id="outls"></g><g id="axes"></g>
+        <g id="beams"></g><g id="dots"></g>
+      </g>
+    </svg>
+
+    <div class="mpanel" id="mpanel">
+      <div>
+        <div class="mname" id="mname">CRR</div>
+        <div class="msub"  id="msub">冠根比</div>
+        <div class="mval"  id="mval">0.4414</div>
+      </div>
+      <div style="width:100%"><div class="mform" id="mform">CRR = JL / KL</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sheetwrap" id="sheetScroll">
+  <div class="sheetStick">
+  <div class="sheet" id="sheet">
+    <div class="sheet-hd st">
+      <b>B-CRR 分析報告</b>
+      <span class="who" id="shTitle">113 · 下顎右側　#45</span>
+      <span class="tag">DEMO DATA</span>
+    </div>
+
+    <div class="files st">
+      <h4>Batches</h4>
+      <div id="folders"></div>
+    </div>
+
+    <div class="body">
+      <div class="toothbox st">
+        <svg viewBox="0 0 170 360" role="img"
+             aria-label="測試集 113 #45 的實際輪廓，轉正後標出 CEJ 與 ALC">
+          <!-- 這不是通用示意圖：是測試集那顆下顎第二小臼齒的遮罩輪廓轉正而來，
+               所以牙型、冠根比例（1 : 2.27）、牙頸收縮都是量出來的 -->
+          <path id="toothOut" d="M72.3 14.0C67.8 14.2 65.9 14.6 62.2 16.0C58.4 17.4 54.5 19.3 49.8 22.4C45.1 25.5 37.5 30.1 33.9 34.6C30.3 39.0 29.9 42.5 28.4 49.2C26.9 55.9 25.1 69.2 24.6 74.7C24.2 80.1 24.1 77.2 25.8 81.9C27.4 86.6 32.2 95.7 34.7 102.8C37.1 109.9 39.2 117.8 40.7 124.6C42.1 131.3 42.8 136.9 43.3 143.5C43.8 150.1 43.1 158.1 43.6 164.2C44.1 170.4 45.6 173.9 46.2 180.6C46.8 187.2 45.5 191.7 47.3 204.2C49.1 216.7 54.3 236.2 56.9 255.4C59.6 274.7 61.2 306.3 63.3 319.5C65.5 332.6 68.0 331.3 69.8 334.4C71.5 337.6 71.1 337.0 73.7 338.3C76.3 339.5 82.3 341.6 85.5 342.0C88.6 342.4 90.4 341.7 92.7 340.9C95.0 340.0 97.0 339.5 99.2 336.9C101.3 334.2 103.5 329.8 105.5 325.1C107.4 320.4 108.8 319.2 110.7 308.6C112.6 298.1 115.8 276.2 117.0 261.6C118.2 246.9 117.5 229.7 117.9 220.5C118.4 211.3 119.6 209.7 119.8 206.5C120.0 203.2 118.3 211.7 118.9 201.0C119.6 190.3 122.4 154.9 123.8 142.3C125.2 129.7 124.3 135.7 127.4 125.3C130.6 115.0 139.6 91.5 142.6 80.2C145.6 69.0 145.0 62.2 145.4 57.8C145.7 53.5 146.0 56.4 144.8 54.2C143.6 52.0 144.5 50.1 138.4 44.4C132.3 38.8 116.4 25.1 108.2 20.2C100.0 15.3 95.2 16.1 89.2 15.0C83.2 14.0 76.8 13.8 72.3 14.0Z"
+                fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/>
+          <line class="lvl" x1="14" y1="131.9" x2="126" y2="131.9" stroke="#fff"
+                stroke-width="1" stroke-dasharray="5 5"/>
+          <line class="lvl" id="lAlc" x1="14" y1="200" x2="126" y2="200" stroke="#fff"
+                stroke-width="1" stroke-dasharray="5 5"/>
+          <text class="lvl" x="132" y="134.9" fill="#fff"
+                font-family="IBM Plex Mono,monospace" font-size="11">CEJ</text>
+          <text class="lvl" id="tAlc" x="132" y="203" fill="#fff"
+                font-family="IBM Plex Mono,monospace" font-size="11">ALC</text>
+        </svg>
+      </div>
+
+      <div class="right">
+        <div class="mrow st">
+          <div><b>CRR</b><s id="vCRR">0.4414</s><em>JL / KL</em></div>
+          <div><b>ABLR</b><s id="vABLR">0.3169</s><em>1 − SK / LK</em></div>
+          <div><b>B-CRR</b><s id="vBCRR">1.1100</s><em>JS / KS</em></div>
+        </div>
+        <div class="lower">
+          <div class="chart st"><svg id="bars" viewBox="0 0 320 150"
+            preserveAspectRatio="xMidYMid meet"></svg></div>
+          <div class="dials st">
+            <div class="dial"><svg id="dConf" viewBox="0 0 100 100"></svg><b>信心</b></div>
+            <div class="dial"><svg id="dRisk" viewBox="0 0 100 100"></svg><b>風險程度</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<section class="acc" id="accScroll">
+  <div class="accStick">
+  <div class="accgrid">
+    <figure><b data-to="0.9699">0.0000</b><figcaption>Dice</figcaption></figure>
+    <figure><b data-to="0.9415">0.0000</b><figcaption>IoU</figcaption></figure>
+    <figure><b data-to="0.9721">0.0000</b><figcaption>Precision</figcaption></figure>
+    <figure><b data-to="0.9744">0.0000</b><figcaption>Recall</figcaption></figure>
+  </div>
+  </div>
+</section>
+
+<section class="cta"><button id="goRun">See how it works</button></section>
+
+<script>
+const GEO = {"image":"113","size":[787,555],"teeth":[{"obb":[[252.3,58.5],[322.3,452.9],[180.5,478.0],[110.6,83.7]],"poly":[[159.0,77.0],[148.0,83.0],[136.0,95.0],[122.0,115.0],[121.0,134.0],[126.0,165.0],[130.0,173.0],[148.0,194.0],[163.0,217.0],[173.0,238.0],[181.0,262.0],[190.0,280.0],[200.0,307.0],[230.0,363.0],[261.0,435.0],[274.0,450.0],[280.0,453.0],[295.0,453.0],[303.0,449.0],[309.0,442.0],[312.0,426.0],[312.0,405.0],[302.0,348.0],[288.0,300.0],[285.0,283.0],[282.0,277.0],[266.0,207.0],[264.0,186.0],[265.0,128.0],[260.0,101.0],[258.0,97.0],[247.0,88.0],[203.0,71.0],[179.0,72.0]],"axis":[[293.8,453.4],[173.1,72.5]],"pts":{"A":[127.0,118.0],"B":[244.0,91.0],"C":[158.1,209.3],"D":[266.9,209.5],"G":[287.0,447.0],"E":[192.9,289.8],"F":[287.6,279.6]},"lv":{"H":{"p":[187.6,118.1],"line":[[86.4,117.9],[288.8,118.3]]},"I":{"p":[179.0,90.9],"line":[[77.7,90.7],[280.2,91.1]]},"J":{"p":[183.3,104.5],"line":[[82.0,104.3],[284.5,104.7]]},"K":{"p":[291.8,447.0],"line":[[190.6,446.8],[393.1,447.2]]},"L":{"p":[216.5,209.4],"line":[[115.3,209.2],[317.8,209.6]]},"R":{"p":[242.0,289.9],"line":[[140.8,289.7],[343.3,290.1]]},"Q":{"p":[238.7,279.5],"line":[[137.5,279.3],[340.0,279.7]]},"S":{"p":[240.4,284.7],"line":[[139.1,284.5],[341.6,284.9]]}},"crr":0.4414,"ablr":0.3169,"bcrr":1.11,"max_blr":0.3387},{"obb":[[469.3,47.4],[534.9,422.4],[319.5,460.2],[253.8,85.1]],"poly":[[322.0,78.0],[311.0,84.0],[298.0,97.0],[277.0,111.0],[268.0,127.0],[266.0,134.0],[267.0,153.0],[274.0,185.0],[307.0,230.0],[327.0,264.0],[343.0,302.0],[369.0,353.0],[378.0,376.0],[389.0,393.0],[409.0,411.0],[428.0,421.0],[440.0,425.0],[481.0,428.0],[498.0,425.0],[507.0,421.0],[514.0,414.0],[521.0,400.0],[524.0,387.0],[524.0,373.0],[520.0,348.0],[504.0,289.0],[501.0,270.0],[486.0,209.0],[482.0,177.0],[482.0,123.0],[476.0,94.0],[471.0,83.0],[456.0,64.0],[445.0,59.0],[422.0,57.0],[406.0,61.0],[386.0,72.0],[363.0,68.0],[342.0,71.0]],"axis":[[468.3,434.2],[354.0,67.0]],"pts":{"A":[269.0,126.0],"B":[427.0,58.0],"C":[317.4,248.3],"D":[486.1,206.5],"G":[488.0,421.0],"E":[332.7,277.0],"F":[502.0,252.2]},"lv":{"H":{"p":[365.0,102.2],"line":[[223.9,137.2],[506.0,67.3]]},"I":{"p":[356.6,75.4],"line":[[215.6,110.4],[497.7,40.5]]},"J":{"p":[360.8,88.8],"line":[[219.7,123.8],[501.8,53.9]]},"K":{"p":[465.9,426.5],"line":[[324.9,461.4],[607.0,391.5]]},"L":{"p":[403.8,226.9],"line":[[262.7,261.9],[544.8,192.0]]},"R":{"p":[413.2,257.1],"line":[[272.1,292.0],[554.2,222.1]]},"Q":{"p":[418.1,272.9],"line":[[277.1,307.9],[559.2,238.0]]},"S":{"p":[415.6,265.0],"line":[[274.6,300.0],[556.7,230.1]]}},"crr":0.6919,"ablr":0.1909,"bcrr":1.0911,"max_blr":0.2307}]};
+const TEETH = GEO.teeth.slice(0,1);          /* 只示範左邊那顆牙 */
+
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const seg=(t,a,b)=>clamp((t-a)/(b-a),0,1);
+const ease=x=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
+const N=t=>document.createElementNS("http://www.w3.org/2000/svg",t);
+const pathOf=p=>"M "+p.map(q=>q.join(" ")).join(" L ")+" Z";
+const at=(t,k)=>t.pts[k]||t.lv[k].p;
+
+/* ═════ 一鏡到底 ═════
+   蛻皮、推近、點亮、講指標全部在同一個 sticky、同一個 SVG 裡完成。
+   分成兩個區塊的話，交界處會同時看到兩顆牙，那不叫銜接。 */
+const sv=document.getElementById("sv"), mpanel=document.getElementById("mpanel");
+const gBox=document.getElementById("gBox"), gTooth=document.getElementById("gTooth");
+const boxes=document.getElementById("boxes"), outls=document.getElementById("outls");
+const axes=document.getElementById("axes"), beams=document.getElementById("beams"),
+      dots=document.getElementById("dots");
+[gBox,gTooth].forEach(g=>{
+  const r=N("rect"); r.setAttribute("width",787); r.setAttribute("height",555);
+  r.setAttribute("fill","#000"); g.appendChild(r);
+});
+
+const ORDER=[["C","D"],["A","B"],["J","L","G"],["K"],["E","F"],["Q","S","R"]];
+const dotEls={}, T0=TEETH[0];
+
+TEETH.forEach(t=>{
+  const q=N("polygon"); q.setAttribute("points",t.obb.map(p=>p.join(",")).join(" "));
+  q.setAttribute("fill","#fff"); gBox.appendChild(q);
+  const m=N("path"); m.setAttribute("d",pathOf(t.poly)); m.setAttribute("fill","#fff");
+  gTooth.appendChild(m);
+
+  const b=N("polygon"); b.setAttribute("points",t.obb.map(p=>p.join(",")).join(" "));
+  b.setAttribute("class","box"); boxes.appendChild(b);
+  const o=N("path"); o.setAttribute("d",pathOf(t.poly)); o.setAttribute("class","outl");
+  outls.appendChild(o);
+  const ax=N("line"); ax.setAttribute("x1",t.axis[0][0]); ax.setAttribute("y1",t.axis[0][1]);
+  ax.setAttribute("x2",t.axis[1][0]); ax.setAttribute("y2",t.axis[1][1]);
+  ax.setAttribute("class","axis"); axes.appendChild(ax);
+
+  ORDER.flat().forEach(k=>{
+    const [x,y]=at(t,k), g=N("g");
+    g.setAttribute("opacity","0"); g.dataset.x=x; g.dataset.y=y; g.dataset.v=0;
+    g.setAttribute("transform",`translate(${x} ${y})`);
+    const halo=N("circle"); halo.setAttribute("r",10); halo.setAttribute("class","halo");
+    const core=N("circle"); core.setAttribute("r",2.4); core.setAttribute("fill","#fff");
+    const tx=N("text"); tx.setAttribute("x",9); tx.setAttribute("y",-7); tx.textContent=k;
+    g.append(halo,core,tx); dots.appendChild(g); dotEls[k]=g;
+  });
+});
+
+const MET=[
+  {n:"CRR",  sub:"冠根比",           f:"CRR = JL / KL",      v:"crr",
+   pts:["J","L","K"], segs:[["J","L"],["K","L"]]},
+  {n:"ABLR", sub:"平均齒槽骨流失比", f:"ABLR = 1 − SK / LK", v:"ablr",
+   pts:["S","K","L"], segs:[["S","K"],["L","K"]]},
+  {n:"B-CRR",sub:"骨水平冠根比",     f:"B-CRR = JS / KS",    v:"bcrr",
+   pts:["J","S","K"], segs:[["J","S"],["K","S"]]},
+];
+const beamEls={};
+MET.forEach((m,mi)=>{
+  beamEls[mi]=m.segs.map(([a,b])=>{
+    const p1=at(T0,a), p2=at(T0,b), g=N("g");
+    for(const cls of ["glow","beam","seg"]){
+      const l=N("line");
+      l.setAttribute("x1",p1[0]); l.setAttribute("y1",p1[1]);
+      l.setAttribute("x2",p2[0]); l.setAttribute("y2",p2[1]);
+      l.setAttribute("class",cls); g.appendChild(l);
+    }
+    beams.appendChild(g); return g;
+  });
+});
+
+[...boxes.children,...outls.children].forEach(el=>{
+  const L=el.getTotalLength(); el.dataset.len=L;
+  el.style.strokeDasharray=L; el.style.strokeDashoffset=L;
+});
+
+/* 鏡頭：整張片 → 收到牙齒身上 */
+const VB0=[0,0,787,555];
+const VB1=(()=>{
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  TEETH.forEach(t=>t.poly.forEach(([x,y])=>{
+    x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y);
+  }));
+  const pad=34;
+  return [x0-pad,y0-pad,x1-x0+pad*2,y1-y0+pad*2];
+})();
+/* 鏡頭：不改 viewBox、不改元素寬度，只對 <g> 下 transform。
+   改 viewBox 會讓三層遮罩每幀重新光柵化，改寬度還會觸發重排——
+   那正是畫面一格一格跳的來源。transform 走合成層，不碰版面。 */
+const CAM_S=Math.min(VB0[2]/VB1[2], VB0[3]/VB1[3]);
+const C0=[VB0[2]/2, VB0[3]/2];
+const C1=[VB1[0]+VB1[2]/2, VB1[1]+VB1[3]/2];
+const cam=document.getElementById("cam"), camImg=document.getElementById("camImg");
+let lastCam="";
+
+const imFull=document.getElementById("imFull"), imBox=document.getElementById("imBox");
+const mname=document.getElementById("mname"), msub=document.getElementById("msub"),
+      mval=document.getElementById("mval"), mform=document.getElementById("mform");
+
+function prog(el){
+  const r=el.getBoundingClientRect(), span=r.height-innerHeight;
+  return span<=0?0:clamp(-r.top/span,0,1);
+}
+
+function frame(t){
+
+  /* 1 蛻皮 */
+  [...boxes.children].forEach(el=>{
+    el.style.strokeDashoffset=el.dataset.len*(1-ease(seg(t,.03,.11)));
+    el.style.opacity=1-ease(seg(t,.32,.40));
+  });
+  [...outls.children].forEach(el=>{
+    el.style.strokeDashoffset=el.dataset.len*(1-ease(seg(t,.21,.30)));
+    el.style.opacity=1-.7*ease(seg(t,.46,.55));
+  });
+  const oF=1-ease(seg(t,.13,.20)), oB=1-ease(seg(t,.32,.40));
+  imFull.style.opacity=oF; imFull.style.display=oF<.004?"none":"";
+  imBox.style.opacity=oB;  imBox.style.display=oB<.004?"none":"";
+
+  /* 2 鏡頭推近 */
+  const z=ease(seg(t,.36,.46));
+  const sc=1+(CAM_S-1)*z;
+  const cx=C0[0]+(C1[0]-C0[0])*z, cy=C0[1]+(C1[1]-C0[1])*z;
+  const tr=`translate(${(C0[0]-sc*cx).toFixed(2)} ${(C0[1]-sc*cy).toFixed(2)}) scale(${sc.toFixed(4)})`;
+  if(tr!==lastCam){ cam.setAttribute("transform",tr); camImg.setAttribute("transform",tr); lastCam=tr; }
+  const k=1/sc;
+  sv.style.setProperty("--k",k);
+
+  /* 3 特徵點依序亮起 */
+  ORDER.forEach((grp,gi)=>{
+    const a=.46+gi*.036, v=ease(seg(t,a,a+.026));
+    grp.forEach(kk=>dotEls[kk].dataset.v=v);
+  });
+  [...axes.children].forEach(el=>el.style.opacity=.45*ease(seg(t,.68,.71)));
+
+  /* 4 推到左邊，右邊講指標 */
+  const push=ease(seg(t,.70,.755));
+  sv.style.transform=`translateX(${-push*innerWidth*.22}px)`;
+  mpanel.style.opacity=push;
+
+  const inMet=t>=.76;
+  /* 各占 8%：前段升起、後段停住，讓名詞留在畫面上久一點 */
+  const i=t<.84?0:t<.92?1:2, m=MET[i];
+  if(mname.textContent!==m.n){
+    mname.textContent=m.n; msub.textContent=m.sub; mform.textContent=m.f;
+    mval.textContent=T0[m.v].toFixed(4);
+  }
+  const local=i===0?seg(t,.76,.815):i===1?seg(t,.84,.895):seg(t,.92,.975);
+  const lit=inMet?ease(local):0;
+  Object.values(beamEls).flat().forEach(g=>{
+    g.querySelector(".glow").style.opacity=0;
+    g.querySelector(".beam").style.opacity=0;
+    g.querySelector(".seg").style.opacity=0;
+  });
+  if(inMet) beamEls[i].forEach(g=>{
+    g.querySelector(".glow").style.opacity=.42*lit;
+    g.querySelector(".beam").style.opacity=.8*lit;
+    g.querySelector(".seg").style.opacity=lit;
+  });
+
+  Object.entries(dotEls).forEach(([kk,el])=>{
+    const v=+el.dataset.v, dim=inMet && !m.pts.includes(kk) ? .12 : 1;
+    const op=(v*dim).toFixed(3);
+    if(el.dataset.op!==op){ el.setAttribute("opacity",op); el.dataset.op=op; }
+    const tr=`translate(${el.dataset.x} ${el.dataset.y}) scale(${((.6+.4*v)*k).toFixed(4)})`;
+    if(el.dataset.tr!==tr){ el.setAttribute("transform",tr); el.dataset.tr=tr; }
+  });
+
+}
+
+/* ═════ 診斷書 ═════ */
+const CEIL={crr:1.00, ablr:0.33, bcrr:1.50};
+const BATCHES=[
+  {id:"113", name:"113 · 下顎右側", teeth:[
+    {no:"#45", crr:T0.crr, ablr:T0.ablr, bcrr:T0.bcrr, conf:.97}]},
+  {id:"A-0312", name:"批次 A · 0312", teeth:[
+    {no:"#14", crr:.412, ablr:.186, bcrr:.735, conf:.96},
+    {no:"#15", crr:.455, ablr:.204, bcrr:.828, conf:.94},
+    {no:"#24", crr:.503, ablr:.231, bcrr:.955, conf:.93}]},
+  {id:"A-0319", name:"批次 A · 0319", teeth:[
+    {no:"#34", crr:.618, ablr:.352, bcrr:1.497, conf:.92},
+    {no:"#35", crr:.574, ablr:.298, bcrr:1.243, conf:.95}]},
+  {id:"B-0402", name:"批次 B · 0402", teeth:[
+    {no:"#44", crr:.386, ablr:.163, bcrr:.656, conf:.98},
+    {no:"#45", crr:.409, ablr:.175, bcrr:.708, conf:.97},
+    {no:"#46", crr:.437, ablr:.191, bcrr:.775, conf:.96}]},
+  {id:"B-0417", name:"批次 B · 0417", teeth:[
+    {no:"#25", crr:.742, ablr:.468, bcrr:2.274, conf:.91},
+    {no:"#26", crr:.815, ablr:.521, bcrr:2.789, conf:.89}]},
+  {id:"C-0508", name:"批次 C · 0508", teeth:[
+    {no:"#15", crr:.531, ablr:.244, bcrr:1.026, conf:.95},
+    {no:"#16", crr:.487, ablr:.219, bcrr:.905, conf:.96},
+    {no:"#17", crr:.562, ablr:.277, bcrr:1.161, conf:.93}]},
+  {id:"C-0521", name:"批次 C · 0521", teeth:[
+    {no:"#33", crr:.348, ablr:.152, bcrr:.590, conf:.98},
+    {no:"#34", crr:.371, ablr:.168, bcrr:.648, conf:.97}]},
+  {id:"D-0604", name:"批次 D · 0604", teeth:[
+    {no:"#36", crr:1.062, ablr:.604, bcrr:4.207, conf:.87},
+    {no:"#37", crr:.938, ablr:.556, bcrr:3.365, conf:.88}]},
+];
+
+const folders=document.getElementById("folders"), shTitle=document.getElementById("shTitle");
+BATCHES.forEach((b,bi)=>{
+  const d=document.createElement("div"); d.className="fold"+(bi?"":" open");
+  d.innerHTML=`<button><span class="ar">▶</span>${b.name}<span class="n">${b.teeth.length}</span></button>
+    <div class="kids">${b.teeth.map((t,ti)=>
+      `<button data-b="${bi}" data-t="${ti}"${bi===0&&ti===0?' class="on"':''}>${t.no}
+        <span>${t.bcrr.toFixed(3)}</span></button>`).join("")}</div>`;
+  d.querySelector(":scope > button").onclick=()=>d.classList.toggle("open");
+  folders.appendChild(d);
+});
+
+/* 目前這顆牙的數值；展開動畫會照著它從 0 長上來 */
+const CUR={crr:0,ablr:0,bcrr:0,conf:0,risk:0,avg:{crr:0,ablr:0,bcrr:0}};
+const RING_R=38, RING_C=2*Math.PI*RING_R;
+
+function ringMarkup(){
+  return `<circle cx="50" cy="50" r="${RING_R}" fill="none" stroke="#fff"
+      stroke-opacity=".28" stroke-width="6"/>
+    <circle class="arc" cx="50" cy="50" r="${RING_R}" fill="none" stroke="#fff"
+      stroke-width="6" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}"
+      transform="rotate(-90 50 50)"/>
+    <text class="rv" x="50" y="50" text-anchor="middle" dominant-baseline="central"
+      font-family="Archivo,sans-serif" font-weight="700" font-size="22" fill="#fff">0</text>`;
+}
+dConf.innerHTML=ringMarkup(); dRisk.innerHTML=ringMarkup();
+
+function barChart(avg){
+  const keys=["crr","ablr","bcrr"], names=["CRR","ABLR","B-CRR"];
+  const X0=42, W=70, GAP=24, TOP=18, H=96;
+  let h=`<rect class="frame" x="${X0-14}" y="${TOP}" width="${3*W+2*GAP+28}" height="${H}"
+          fill="none" stroke="#fff" stroke-dasharray="5 5"/>`;
+  keys.forEach((k,i)=>{
+    const ratio=avg[k]/CEIL[k], hh=Math.min(ratio,1.4)*H;
+    const col=ratio>1?"#E0564A":ratio>.7?"#E5A34F":"#5FD3A6";
+    const x=X0+i*(W+GAP), y=TOP+H-hh;
+    h+=`<rect class="bar" x="${x}" y="${y}" width="${W}" height="${hh}" fill="${col}"
+          style="transform-box:fill-box;transform-origin:bottom"/>
+        <text class="barv" x="${x+W/2}" y="${y-6}" text-anchor="middle" fill="#fff"
+          font-family="IBM Plex Mono,monospace" font-size="11">0.000</text>
+        <text class="barn" x="${x+W/2}" y="${TOP+H+18}" text-anchor="middle" fill="#fff"
+          font-family="IBM Plex Mono,monospace" font-size="10"
+          letter-spacing="1">${names[i]}</text>`;
+  });
+  document.getElementById("bars").innerHTML=h;
+}
+
+function showTooth(bi,ti){
+  const b=BATCHES[bi], t=b.teeth[ti];
+  shTitle.textContent=`${b.name}　${t.no}`;
+  const cej=131.9, apex=336.5, alc=cej+(apex-cej)*clamp(t.ablr,0,.9);
+  lAlc.setAttribute("y1",alc); lAlc.setAttribute("y2",alc);
+  tAlc.setAttribute("y",alc+3);
+
+  const n=b.teeth.length;
+  for(const k of ["crr","ablr","bcrr"]) CUR.avg[k]=b.teeth.reduce((s,x)=>s+x[k],0)/n;
+  CUR.crr=t.crr; CUR.ablr=t.ablr; CUR.bcrr=t.bcrr;
+  CUR.conf=b.teeth.reduce((s,x)=>s+x.conf,0)/n;
+  const worst=Math.max(...["crr","ablr","bcrr"].map(k=>CUR.avg[k]/CEIL[k]));
+  CUR.risk=clamp((worst-.55)/1.05,0,1);
+  barChart(CUR.avg);
+
+  document.querySelectorAll(".kids button").forEach(x=>x.classList.remove("on"));
+  document.querySelector(`.kids button[data-b="${bi}"][data-t="${ti}"]`)?.classList.add("on");
+  paintSheet(sheetP);
+}
+
+/* ═════ 診斷書：滿版釘住之後，隨捲動一層層展開 ═════
+   分成外框 → 標頭 → 批次逐列 → 牙齒描邊 → CEJ/ALC → 名詞逐列 →
+   三個指標逐格數字上升 → 長條逐根長高 → 兩個圓環掃出來。
+   全部由捲動位置決定，所以不可能提前跑完。 */
+const sheetEl=document.getElementById("sheet"), sheetSec=document.getElementById("sheetScroll");
+const toothOut=document.getElementById("toothOut");
+const TOOTH_LEN=toothOut.getTotalLength();
+toothOut.style.strokeDasharray=TOOTH_LEN;
+const lvls=[...sheetEl.querySelectorAll(".lvl")];
+const folds=[...sheetEl.querySelectorAll(".fold")];
+const mcards=[...sheetEl.querySelectorAll(".mrow > div")];
+const mvals=[vCRR,vABLR,vBCRR];
+let sheetP=0;
+
+const pop=x=>1-Math.pow(1-x,3);
+function paintSheet(p){
+  sheetP=p;
+  /* 外框：釘住之後才彈開，帶一點回彈 */
+  const f=pop(seg(p,.02,.16));
+  sheetEl.style.opacity=(.10+.90*f).toFixed(3);
+  sheetEl.style.transform=`scale(${(.90+.10*f+.012*Math.sin(f*Math.PI)).toFixed(4)})`;
+  sheetEl.classList.toggle("done", p>.985);
+
+  const set=(el,v,dy=18)=>{ el.style.opacity=v.toFixed(3);
+    el.style.transform=`translateY(${((1-v)*dy).toFixed(1)}px)`; };
+
+  set(document.querySelector(".sheet-hd"), pop(seg(p,.14,.22)), 14);
+  folds.forEach((el,i)=>set(el, pop(seg(p,.20+i*.014,.26+i*.014)), 12));
+
+  /* 牙齒：輪廓自己描出來 */
+  const td=pop(seg(p,.30,.46));
+  toothOut.style.strokeDashoffset=TOOTH_LEN*(1-td);
+  toothOut.style.opacity=td>0?1:0;
+  const lv=pop(seg(p,.44,.52));
+  lvls.forEach(el=>el.style.opacity=lv.toFixed(3));
+
+
+  /* 三個指標：逐格彈出並把數字跑上去 */
+  mcards.forEach((el,i)=>{
+    const v=pop(seg(p,.56+i*.045,.64+i*.045));
+    set(el,v,22);
+    mvals[i].textContent=(([CUR.crr,CUR.ablr,CUR.bcrr][i])*v).toFixed(4);
+  });
+
+  /* 長條圖 */
+  const cf=pop(seg(p,.62,.70));
+  const bars=[...document.querySelectorAll("#bars .bar")];
+  const barv=[...document.querySelectorAll("#bars .barv")];
+  const barn=[...document.querySelectorAll("#bars .barn")];
+  document.querySelector("#bars .frame")?.setAttribute("opacity",cf);
+  bars.forEach((r,i)=>{
+    const v=pop(seg(p,.68+i*.055,.78+i*.055));
+    r.style.transform=`scaleY(${v.toFixed(3)})`;
+    barv[i].setAttribute("opacity",v.toFixed(3));
+    barv[i].textContent=(CUR.avg[["crr","ablr","bcrr"][i]]*v).toFixed(3);
+    barn[i].setAttribute("opacity",cf.toFixed(3));
+  });
+
+  /* 兩個圓環 */
+  [[dConf,CUR.conf,.84],[dRisk,CUR.risk,.88]].forEach(([svg,val,a])=>{
+    const v=pop(seg(p,a,a+.11));
+    const arc=svg.querySelector(".arc"), tx=svg.querySelector(".rv");
+    arc.style.strokeDashoffset=RING_C*(1-val*v);
+    tx.setAttribute("opacity",v.toFixed(3));
+    tx.textContent=Math.round(val*v*100);
+  });
+  [...document.querySelectorAll(".dial b")].forEach((el,i)=>
+    el.style.opacity=pop(seg(p,.86+i*.04,.96+i*.04)).toFixed(3));
+}
+
+folders.addEventListener("click",e=>{
+  const b=e.target.closest(".kids button"); if(!b) return;
+  showTooth(+b.dataset.b, +b.dataset.t);
+});
+showTooth(0,0);
+
+/* ═════ 準確度：捲動驅動的單向遞增 ═════
+   自己佔 260svh，四個數字依序往上跑，最後一個約在 p=.82 收完，
+   所以捲到這一屏站定時剛好結束。只記最大值，往回捲不會倒退。 */
+const accSec=document.getElementById("accScroll");
+const accB=[...document.querySelectorAll(".accgrid b")];
+const accMax=accB.map(()=>0);
+function accFrame(){
+  const p=prog(accSec);
+  accB.forEach((el,i)=>{
+    const local=clamp((p-i*.10)/.52,0,1);
+    const v=1-Math.pow(1-local,3);
+    if(v<=accMax[i]) return;
+    accMax[i]=v;
+    el.textContent=(+el.dataset.to*v).toFixed(4);
+    el.style.opacity=(.16+.84*v).toFixed(3);
+    el.style.transform=`translateY(${((1-v)*22).toFixed(1)}px)`;
+  });
+}
+
+goRun.onclick=()=>document.getElementById("act").scrollIntoView({behavior:"smooth"});
+
+/* 直接把捲動值畫上去會跟著滾輪一格一格跳。改成每幀往目標值靠近一部分，
+   停止捲動後自然收斂，看起來才連續。 */
+const ACT=document.getElementById("act");
+let cur=prog(ACT), running=false;
+let curS=prog(sheetSec);
+/* 只有靠近畫面的區段才算，三段同時跑會白白浪費一幀的預算 */
+const near=el=>{ const r=el.getBoundingClientRect();
+  return r.bottom>-innerHeight && r.top<innerHeight*2; };
+function loop(){
+  const target=prog(ACT), tS=prog(sheetSec);
+  cur  += (target-cur)*.075;
+  curS += (tS-curS)*.10;
+  if(Math.abs(target-cur)<.0001) cur=target;
+  if(Math.abs(tS-curS)<.0001) curS=tS;
+  if(near(ACT)) frame(cur);
+  if(near(sheetSec)) paintSheet(curS);
+  if(near(accSec)) accFrame();
+  running = (cur!==target)||(curS!==tS);
+  if(running) requestAnimationFrame(loop);
+}
+function kick(){ if(!running){ running=true; requestAnimationFrame(loop); } }
+addEventListener("scroll",kick,{passive:true});
+addEventListener("resize",()=>{ cur=prog(ACT); curS=prog(sheetSec);
+  frame(cur); paintSheet(curS); accFrame(); });
+frame(cur); paintSheet(curS); accFrame();
+</script>

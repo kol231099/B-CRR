@@ -1,0 +1,39 @@
+# 病患影像與標註：一律不進版控
+PA_source/
+labeled_PA/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+
+# 模型權重：單檔 176–856 MB，超過 GitHub 的 100 MB 上限，
+# 且可由 koi/setA/scripts/ 的訓練腳本重新產生
+*.pt
+*.pth
+*.onnx
+checkpoints/
+checkpoints_obb/
+
+# 訓練與評估的中間產物
+d2out/
+yolo_runs/
+yolo_obb_runs/
+steps/
+crops/
+crops_obb/
+logs/
+*.csv
+
+# 資料庫與憑證
+*.sqlite3
+*.sqlite3-*
+*.env
+bcrr.env
+
+# 其他
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

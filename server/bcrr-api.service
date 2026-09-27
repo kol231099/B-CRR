@@ -1,0 +1,27 @@
+[Unit]
+Description=B-CRR inference API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bcrr/repo
+Environment=BCRR_REPO=/opt/bcrr/repo
+Environment=BCRR_FOLDS=5
+Environment=BCRR_MAXSIDE=2400
+# 保險庫的影像放這裡（加密後才落地）。刻意不放在 /opt/bcrr/repo 底下——
+# 部署會 rsync 那個目錄，資料跟程式混在一起遲早會被某次部署掃掉。
+Environment=BCRR_DATA=/var/lib/bcrr
+Environment=BCRR_THREADS=2
+Environment=OMP_NUM_THREADS=2
+# 憑證與白名單放這裡，權限 600，不進 git、不進網站目錄。
+# 檔案不在也能開（登入會停用），部署順序才不會被綁死。
+EnvironmentFile=-/etc/bcrr.env
+ExecStart=/opt/bcrr/venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8900 --workers 1 --timeout-keep-alive 120
+Restart=on-failure
+RestartSec=5
+# 實測：常駐 1.5 GB（5 折），單張推論高水位 ~4 GB——偵測那段的瞬間用量才是大宗，
+# 減折數救不了。不設 MemoryMax，改用 swap 吸收尾巴；真的爆掉就讓它重啟。
+OOMPolicy=restart
+
+[Install]
+WantedBy=multi-user.target
