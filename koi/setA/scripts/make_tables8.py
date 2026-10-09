@@ -51,6 +51,8 @@ HOLD = [
     ("③ YOLO11-seg 單階段", "hold5_YOLOseg_fold*.csv"),
     ("④ MaskRCNN→OBB→HRNet", "hold5_MaskRCNN_OBB_HRNet_fold*.csv"),
     ("④j MaskRCNN→OBB→HRNet 擾動", "hold5_MaskRCNN_OBB_HRNet_jit_fold*.csv"),
+    ("①t Mask R-CNN +TTA", "hold5_MaskRCNN_tta_fold*.csv"),
+    ("⑨ 融合 +TTA", "hold5_MaskRCNN_OBB_HRNet_fuse_jit_tta_fold*.csv"),
     ("⑤ YOLO11-OBB→HRNet", "hold5_YOLOOBB_OBB_HRNet_fold*.csv"),
     ("⑥ YOLOv8-OBB→HRNet", "hold5_yolov8sOBB_OBB_HRNet_fold*.csv"),
     ("⑦ YOLO12-OBB→HRNet", "hold5_yolo12sOBB_OBB_HRNet_fold*.csv"),

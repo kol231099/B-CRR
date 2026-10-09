@@ -47,7 +47,7 @@ from tta import predict_tta  # noqa: E402
 
 EVAL, PAD, TAG = ROOT / "eval", 0.2, "unet_tu-hrnet_w32"
 NAMES = {1: "MaskRCNN", 2: "MaskRCNN_HBB_HRNet", 3: "YOLOseg",
-         4: "MaskRCNN_OBB_HRNet", 5: "YOLOOBB_OBB_HRNet"}
+         4: "MaskRCNN_OBB_HRNet", 5: "YOLOOBB_OBB_HRNet", 9: "MaskRCNN_OBB_HRNet_fuse"}
 OBB_ARCHS = {5: "yolo11s", 6: "yolov8s", 7: "yolo12s", 8: "yolo26s"}
 _cache: dict = {}
 _OBB_ARCH: list = ["yolo11s"]   # 變體 5~8 共用同一段程式，只換這個
@@ -87,19 +87,22 @@ def yolo(fold: int, obb: bool):
     return _cache[key]
 
 
-def mr_masks(fold, gray, thr, use_tta, hw):
+def mr_probs(fold, gray, thr, use_tta, hw):
+    """Mask R-CNN 的機率圖（未二值化）[N,H,W] 與分數。"""
     model = maskrcnn(fold)
     if use_tta:
         prob, _, sc = predict_tta(model, gray, thr)
-        m = np.array([clean_mask(x) for x in prob > 0.5], bool).reshape(-1, *hw)
     else:
         t = torch.from_numpy(gray).float().div(255).unsqueeze(0).repeat(3, 1, 1)
         out = model([t])[0]
         keep = out["scores"].numpy() >= thr
-        m = np.array([clean_mask(x) for x in out["masks"].numpy()[keep, 0] > 0.5],
-                     bool).reshape(-1, *hw)
-        sc = out["scores"].numpy()[keep]
-    return m, np.asarray(sc)
+        prob, sc = out["masks"].numpy()[keep, 0], out["scores"].numpy()[keep]
+    return np.asarray(prob, np.float32).reshape(-1, *hw), np.asarray(sc)
+
+
+def mr_masks(fold, gray, thr, use_tta, hw):
+    prob, sc = mr_probs(fold, gray, thr, use_tta, hw)
+    return np.array([clean_mask(x) for x in prob > 0.5], bool).reshape(-1, *hw), sc
 
 
 def refine_hbb(seg, gray, coarse, hw, use_tta):
@@ -121,22 +124,37 @@ def refine_hbb(seg, gray, coarse, hw, use_tta):
     return np.array(out, bool).reshape(-1, h, w)
 
 
+def obb_prob(seg, gray, box, hw, use_tta):
+    """斜框裁切 → 第二階段 → 轉回原圖的機率圖（未二值化）。"""
+    h, w = hw
+    M, cw, ch = warp_of(*box, PAD)
+    prob = predict([seg], cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR), use_tta)
+    small = cv2.resize(prob, (cw, ch), interpolation=cv2.INTER_LINEAR)
+    return cv2.warpAffine(small, cv2.invertAffineTransform(M), (w, h), flags=cv2.INTER_LINEAR)
+
+
 def refine_obb(seg, gray, obbs, hw, use_tta):
     h, w = hw
-    out = []
-    for (cx, cy, rw, rh, ang) in obbs:
-        M, cw, ch = warp_of(cx, cy, rw, rh, ang, PAD)
-        prob = predict([seg], cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR), use_tta)
-        small = cv2.resize(prob, (cw, ch), interpolation=cv2.INTER_LINEAR)
-        back = cv2.warpAffine(small, cv2.invertAffineTransform(M), (w, h),
-                              flags=cv2.INTER_LINEAR) > 0.5
-        out.append(clean_mask(back))
+    out = [clean_mask(obb_prob(seg, gray, box, hw, use_tta) > 0.5) for box in obbs]
     return np.array(out, bool).reshape(-1, h, w)
 
 
 @torch.no_grad()
 def predict_one(v, fold, gray, path, thr, use_tta, hw):
     h, w = hw
+    if v == 9:
+        # 融合：Mask R-CNN 與 OBB→HRNet 的機率圖等權平均後再二值化。權重固定 0.5，
+        # 未在任何資料上調過（hd95_lab.py 在 OOF 上先選定，holdout 只做確認）。
+        prob, sc = mr_probs(fold, gray, thr, use_tta, hw)
+        seg, out, keep = seg2(fold, True), [], []
+        for i, p in enumerate(prob):
+            cm = clean_mask(p > 0.5)
+            if not cm.any():
+                continue
+            pe = obb_prob(seg, gray, obb_of(cm.astype(np.uint8)), hw, use_tta)
+            out.append(clean_mask(0.5 * pe + 0.5 * p > 0.5))
+            keep.append(i)
+        return np.array(out, bool).reshape(-1, h, w), sc[keep]
     if v in (1, 2, 4):
         coarse, sc = mr_masks(fold, gray, thr, use_tta, hw)
         if v == 1:
@@ -174,8 +192,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--variant", type=int, nargs="+", required=True,
-                    choices=[1, 2, 3, 4, 5, 6, 7, 8],
-                    help="6/7/8 與 5 同樣是 YOLO-OBB→HRNet，只換偵測器架構")
+                    choices=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    help="6/7/8 與 5 同樣是 YOLO-OBB→HRNet，只換偵測器架構；"
+                         "9 = Mask R-CNN 與 OBB→HRNet 機率融合")
     ap.add_argument("--thr", type=float, default=0.35)
     ap.add_argument("--tta", action="store_true")
     ap.add_argument("--ckpt-dir", default="checkpoints_obb",
