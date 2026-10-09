@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -44,7 +45,6 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from eval_seg2_holdout import predict  # noqa: E402
 from make_crops_obb import obb_of, warp_of  # noqa: E402
 from postprocess import clean_mask  # noqa: E402
 from train_maskrcnn import ANN, CKPT, ROOT, ToothDataset, build_model, collate  # noqa: E402
@@ -62,26 +62,37 @@ def dice(a, b):
     return 2 * (a & b).sum() / max(a.sum() + b.sum(), 1)
 
 
+def dot(p, u):
+    """逐元素展開的內積。不用 @：macOS 的 Accelerate BLAS 會對 matmul 誤報 overflow。"""
+    return p[..., 0] * u[0] + p[..., 1] * u[1]
+
+
 def axes(box):
-    """crop 的 x、y 軸在原圖中的單位向量。"""
+    """crop 的 x、y 軸在原圖中的單位向量（旋轉矩陣的兩列）。"""
     M, _, _ = warp_of(*box, PAD)
-    R = M[:, :2]
-    return R.T @ np.array([1.0, 0.0]), R.T @ np.array([0.0, 1.0])
+    return M[0, :2].copy(), M[1, :2].copy()
 
 
-def seg_box(seg, gray, box, hw, template=None):
-    """依框裁切 → 第二階段（或模板）→ 貼回原圖，與 eval_e2e_obb.py 一致。"""
+def paste(prob, box, hw):
+    """512x256 機率圖 → 依框轉回原圖，與 eval_e2e_obb.py 一致。"""
     h, w = hw
     M, cw, ch = warp_of(*box, PAD)
-    if template is None:
-        crop = cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR)
-        prob = predict([seg], crop, False)
-    else:
-        prob = template
     small = cv2.resize(prob, (cw, ch), interpolation=cv2.INTER_LINEAR)
     back = cv2.warpAffine(small, cv2.invertAffineTransform(M), (w, h),
                           flags=cv2.INTER_LINEAR) > 0.5
-    return clean_mask(back)
+    return np.asarray(clean_mask(back), bool)
+
+
+def seg_boxes(seg, gray, boxes, hw, device):
+    """一次把多個框送進第二階段（一個 batch），前處理與 eval_seg2_holdout.predict 相同。"""
+    xs = []
+    for box in boxes:
+        M, cw, ch = warp_of(*box, PAD)
+        crop = cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR)
+        xs.append(cv2.resize(crop, SIZE[::-1], interpolation=cv2.INTER_AREA))
+    x = torch.from_numpy(np.stack(xs)).float().div(255).unsqueeze(1).repeat(1, 3, 1, 1)
+    probs = torch.sigmoid(seg(x.to(device)))[:, 0].cpu().numpy()
+    return [paste(p, b, hw) for p, b in zip(probs, boxes)]
 
 
 def push_edge(box, edge, d):
@@ -103,8 +114,9 @@ def extreme(mask, box, edge):
     if len(xs) == 0:
         return np.nan
     ux, uy = axes(box)
-    p = np.stack([xs - box[0], ys - box[1]], 1)
-    proj = {"bottom": p @ uy, "top": -(p @ uy), "right": p @ ux, "left": -(p @ ux)}[edge]
+    p = np.stack([xs - box[0], ys - box[1]], 1).astype(np.float64)
+    proj = {"bottom": dot(p, uy), "top": -dot(p, uy),
+            "right": dot(p, ux), "left": -dot(p, ux)}[edge]
     return float(np.percentile(proj, 99.5))   # 99.5% 而非 max，避開單一雜點
 
 
@@ -121,7 +133,7 @@ def box_err(pred, gt):
     ux, uy = axes(gt)
     dc = np.array([pred[0] - gt[0], pred[1] - gt[1]])
     da = ((pred[4] - gt[4] + 90) % 180) - 90
-    return {"e_cx": float(dc @ ux / gt[2]), "e_cy": float(dc @ uy / gt[3]),
+    return {"e_cx": float(dot(dc, ux) / gt[2]), "e_cy": float(dot(dc, uy) / gt[3]),
             "e_rw": pred[2] / gt[2] - 1, "e_rh": pred[3] / gt[3] - 1, "e_ang": float(da)}
 
 
@@ -152,13 +164,14 @@ def mean_template(fold):
 
 
 @torch.no_grad()
-def run(fold, tag, thr, max_images, rng):
-    seg, mr, tmpl = load_seg(tag, fold), load_mrcnn(fold), mean_template(fold)
+def run(fold, tag, thr, max_images, rng, device):
+    seg, mr, tmpl = load_seg(tag, fold).to(device), load_mrcnn(fold), mean_template(fold)
     ds = ToothDataset(ANN / f"fold{fold}_val.json", train=False, enhance="original")
-    rows = []
+    n = min(len(ds), max_images) if max_images else len(ds)
+    rows, t0 = [], time.time()
     for k, (imgs, targets) in enumerate(DataLoader(ds, batch_size=1, shuffle=False,
                                                    collate_fn=collate)):
-        if max_images and k >= max_images:
+        if k >= n:
             break
         t = targets[0]
         gts = t["masks"].numpy().astype(bool)
@@ -175,38 +188,46 @@ def run(fold, tag, thr, max_images, rng):
             gbox = obb_of(gt.astype(np.uint8))
             r = {"fold": fold, "image": t["_name"], "gt_idx": gi}
 
-            oracle = seg_box(seg, gray, gbox, hw)
+            # 這顆牙要跑的所有框一次送進網路：oracle、16 個推邊、4 個抖動、Mask R-CNN
+            pushed = [push_edge(gbox, e, d) for e in EDGES for d in DELTAS]
+            jits = [jitter(gbox, s, rng) for s in JITTER]
+            ious = [(m & gt).sum() / max((m | gt).sum(), 1) for m in mmasks]
+            mm = mmasks[int(np.argmax(ious))] if ious and max(ious) >= 0.5 else None
+            mbox = [obb_of(mm.astype(np.uint8))] if mm is not None else []
+            outs = seg_boxes(seg, gray, [gbox] + pushed + jits + mbox, hw, device)
+            oracle, outs = outs[0], outs[1:]
+            p_out, outs = outs[:len(pushed)], outs[len(pushed):]
+            j_out, m_out = outs[:len(jits)], outs[len(jits):]
+
             r["d_oracle"] = dice(oracle, gt)
-            r["d_template"] = dice(seg_box(None, gray, gbox, hw, tmpl), gt)
+            r["d_template"] = dice(paste(tmpl, gbox, hw), gt)
 
             # 2. 邊界跟隨斜率：極點位移 ÷ 框邊位移
-            for edge in EDGES:
+            for i, edge in enumerate(EDGES):
                 side = gbox[3] if edge in ("bottom", "top") else gbox[2]
                 e0 = extreme(oracle, gbox, edge)
-                xs, ys = [], []
-                for d in DELTAS:
-                    pm = seg_box(seg, gray, push_edge(gbox, edge, d), hw)
-                    xs.append(d * side)
-                    ys.append(extreme(pm, gbox, edge) - e0)
-                xs, ys = np.array(xs), np.array(ys)
+                xs = np.array([d * side for d in DELTAS])
+                ys = np.array([extreme(pm, gbox, edge) - e0
+                               for pm in p_out[i * len(DELTAS):(i + 1) * len(DELTAS)]])
                 ok = np.isfinite(ys)
-                r[f"slope_{edge}"] = float((xs[ok] @ ys[ok]) / max(xs[ok] @ xs[ok], 1e-9))
+                r[f"slope_{edge}"] = float((xs[ok] * ys[ok]).sum()
+                                           / max((xs[ok] ** 2).sum(), 1e-9))
 
             # 3. 抖動 oracle
-            for s in JITTER:
-                r[f"d_jit{s:g}"] = dice(seg_box(seg, gray, jitter(gbox, s, rng), hw), gt)
+            for s, pm in zip(JITTER, j_out):
+                r[f"d_jit{s:g}"] = dice(pm, gt)
 
             # Mask R-CNN 的框與遮罩
-            ious = [(m & gt).sum() / max((m | gt).sum(), 1) for m in mmasks]
-            if ious and max(ious) >= 0.5:
-                mm = mmasks[int(np.argmax(ious))]
-                mbox = obb_of(mm.astype(np.uint8))
-                e2e = seg_box(seg, gray, mbox, hw)
+            if mm is not None:
+                mbox, e2e = mbox[0], m_out[0]
                 r.update(box_err(mbox, gbox))
                 r["d_mrcnn"] = dice(mm, gt)
                 r["d_e2e"] = dice(e2e, gt)
                 r["d_e2e_vs_mrcnn"] = dice(e2e, mm)   # 第二階段有多像第一階段
             rows.append(r)
+        el = time.time() - t0
+        print(f"  fold {fold}　{k + 1}/{n} 張　{len(gts)} 顆牙　已花 {el:.0f}s　"
+              f"預估剩 {el / (k + 1) * (n - k - 1):.0f}s", flush=True)
     return rows
 
 
@@ -251,12 +272,19 @@ def main():
     ap.add_argument("--model", default="unet_tu-hrnet_w32")
     ap.add_argument("--thr", type=float, default=0.35)
     ap.add_argument("--max-images", type=int, default=0, help="每折最多幾張，0 = 全部")
+    ap.add_argument("--device", default="auto", help="auto / cpu / cuda / mps")
     args = ap.parse_args()
+
+    device = args.device
+    if device == "auto":
+        device = ("cuda" if torch.cuda.is_available() else
+                  "mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"第二階段跑在 {device}（Mask R-CNN 固定 CPU）", flush=True)
 
     rng = np.random.default_rng(0)
     rows = []
     for f in (range(5) if args.all else [args.fold]):
-        rows += run(f, args.model, args.thr, args.max_images, rng)
+        rows += run(f, args.model, args.thr, args.max_images, rng, device)
     EVAL.mkdir(parents=True, exist_ok=True)
     keys = sorted({k for r in rows for k in r}, key=lambda k: (k not in ("fold", "image", "gt_idx"), k))
     with (EVAL / f"diag_box_leak_{args.model}.csv").open("w", newline="", encoding="utf-8") as fh:
