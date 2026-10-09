@@ -272,6 +272,8 @@ def main():
     ap.add_argument("--no-tta", dest="tta", action="store_false",
                     help="不算 Mask R-CNN 的 TTA 對照（省時間）")
     ap.add_argument("--reuse", action="store_true", help="直接讀上次的快取，不重新推論")
+    ap.add_argument("--base", default="M  Mask R-CNN",
+                    help="配對比較的基準變體（名稱取全形括號前），例如 'M  Mask R-CNN TTA'")
     args = ap.parse_args()
     args.only = {Path(x.strip()).stem for a in args.only for x in a.split(",") if x.strip()}
 
@@ -336,9 +338,12 @@ def main():
         return float(np.mean([f(np.array([r[k] for r in rows if r["fold"] == fo], float))
                               for fo in sorted({r["fold"] for r in rows})]))
 
-    base = "M  Mask R-CNN"
     keys = [n.split("（")[0].strip() for n in V]
-    print(f"\n{'=' * 96}\nB. 變體比較（與 ① 逐顆牙配對；勝率 = HD95 比 ① 低的牙所佔比例）\n{'=' * 96}")
+    base = args.base if args.base in keys else "M  Mask R-CNN"
+    if base != args.base:
+        print(f"⚠ 找不到基準 {args.base!r}，改用 {base!r}。可用：{keys}")
+    print(f"\n{'=' * 96}\nB. 變體比較（基準：{base}；與基準逐顆牙配對；"
+          f"勝率 = HD95 比基準低的牙所佔比例）\n{'=' * 96}")
     print(f"  {'變體':<26}{'Dice中位':>9}{'HD95中位':>10}{'HD95平均':>10}{'ASSD中位':>10}"
           f"{'ΔHD95中位':>11}{'勝率':>7}{'Wilcoxon p':>12}")
     def paired(k):
@@ -364,20 +369,21 @@ def main():
 
     print(f"\n{'=' * 96}\nA. 診斷：HD95 是怎麼來的（每顆牙取決定 HD95 的那一側、最差 5% 邊界點的主要位置）\n"
           f"{'=' * 96}")
-    for k in (base, "E  HRNet"):
+    m0 = "M  Mask R-CNN"
+    for k in (m0, "E  HRNet"):
         w = [r[f"{k}|where"] for r in rows]
         vals, cnt = np.unique(w, return_counts=True)
         order = np.argsort(-cnt)
         print(f"  {k}：" + "　".join(f"{vals[i]} {cnt[i]}" for i in order))
-    worse = [r for r in rows if r["E  HRNet|hd95"] - r[f"{base}|hd95"] > 3]
+    worse = [r for r in rows if r["E  HRNet|hd95"] - r[f"{m0}|hd95"] > 3]
     print(f"\n  ④ 比 ① 差 3 px 以上的牙：{len(worse)} 顆（共 {len(rows)}）")
     if worse:
         vals, cnt = np.unique([r["E  HRNet|where"] for r in worse], return_counts=True)
         print("    它們 ④ 的 HD95 來源：" + "　".join(f"{v} {c}" for v, c in
                                                      sorted(zip(vals, cnt), key=lambda x: -x[1])))
-        for r in sorted(worse, key=lambda r: r[f"{base}|hd95"] - r["E  HRNet|hd95"])[:10]:
+        for r in sorted(worse, key=lambda r: r[f"{m0}|hd95"] - r["E  HRNet|hd95"])[:10]:
             print(f"    fold {r['fold']}  {r['image']}  #{r['tooth']}  "
-                  f"① {r[base + '|hd95']:.1f}（{r[base + '|where']}）→ "
+                  f"① {r[m0 + '|hd95']:.1f}（{r[m0 + '|where']}）→ "
                   f"④ {r['E  HRNet|hd95']:.1f}（{r['E  HRNet|where']}）")
     print(f"\n逐顆牙明細 → {out / f'teeth_{tag}.csv'}")
     if args.split == "holdout":
