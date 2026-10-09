@@ -56,6 +56,7 @@ EVAL, PAD = ROOT / "eval", 0.2
 DELTAS = (-0.06, -0.03, 0.03, 0.06)        # 邊界推移量，佔該邊長的比例
 JITTER = (0.01, 0.02, 0.04, 0.08)          # 抖動 oracle 的相對雜訊 σ
 EDGES = ("bottom", "top", "right", "left")  # crop 座標裡的四條邊
+SWAPS = ("ang", "center", "size")           # 換框測試：GT 框只換掉這一項
 
 
 def dice(a, b):
@@ -137,6 +138,16 @@ def box_err(pred, gt):
             "e_rw": pred[2] / gt[2] - 1, "e_rh": pred[3] / gt[3] - 1, "e_ang": float(da)}
 
 
+def swap(gt, pred, part):
+    """GT 框只把某一項換成 Mask R-CNN 框的值，用來把端到端的落差歸因到角度/中心/尺寸。"""
+    cx, cy, rw, rh, ang = gt
+    if part == "ang":   # 用折到 ±90° 的角度差，避免整個 crop 上下顛倒
+        return cx, cy, rw, rh, ang + ((pred[4] - ang + 90) % 180) - 90
+    if part == "center":
+        return pred[0], pred[1], rw, rh, ang
+    return cx, cy, pred[2], pred[3], ang
+
+
 def load_seg(tag, fold):
     arch, enc = split_tag(tag)
     m = build_seg2(arch, enc, pretrained=False)
@@ -194,10 +205,12 @@ def run(fold, tag, thr, max_images, rng, device):
             ious = [(m & gt).sum() / max((m | gt).sum(), 1) for m in mmasks]
             mm = mmasks[int(np.argmax(ious))] if ious and max(ious) >= 0.5 else None
             mbox = [obb_of(mm.astype(np.uint8))] if mm is not None else []
-            outs = seg_boxes(seg, gray, [gbox] + pushed + jits + mbox, hw, device)
+            swaps = [swap(gbox, mbox[0], s) for s in SWAPS] if mbox else []
+            outs = seg_boxes(seg, gray, [gbox] + pushed + jits + mbox + swaps, hw, device)
             oracle, outs = outs[0], outs[1:]
             p_out, outs = outs[:len(pushed)], outs[len(pushed):]
-            j_out, m_out = outs[:len(jits)], outs[len(jits):]
+            j_out, outs = outs[:len(jits)], outs[len(jits):]
+            m_out, s_out = outs[:len(mbox)], outs[len(mbox):]
 
             r["d_oracle"] = dice(oracle, gt)
             r["d_template"] = dice(paste(tmpl, gbox, hw), gt)
@@ -224,6 +237,8 @@ def run(fold, tag, thr, max_images, rng, device):
                 r["d_mrcnn"] = dice(mm, gt)
                 r["d_e2e"] = dice(e2e, gt)
                 r["d_e2e_vs_mrcnn"] = dice(e2e, mm)   # 第二階段有多像第一階段
+                for part, pm in zip(SWAPS, s_out):
+                    r[f"d_swap_{part}"] = dice(pm, gt)
             rows.append(r)
         el = time.time() - t0
         print(f"  fold {fold}　{k + 1}/{n} 張　{len(gts)} 顆牙　已花 {el:.0f}s　"
@@ -258,6 +273,13 @@ def report(rows):
         v = col(k)
         print(f"  {k:<8} 中位 {np.median(v):+.4f}　std {v.std():.4f}　"
               f"|誤差| 中位 {np.median(np.abs(v)):.4f}")
+    print(f"\n{'=' * 72}\n4. 換框歸因：GT 框只換掉一項成 Mask R-CNN 的值\n{'=' * 72}")
+    line("GT 框（oracle）", "d_oracle")
+    line("只換角度", "d_swap_ang")
+    line("只換中心", "d_swap_center")
+    line("只換長寬", "d_swap_size")
+    line("全換（= 端到端）", "d_e2e")
+
     print("\n  抖動 oracle：")
     line("σ = 0（原 oracle）", "d_oracle")
     for s in JITTER:
