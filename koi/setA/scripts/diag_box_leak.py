@@ -57,6 +57,7 @@ DELTAS = (-0.06, -0.03, 0.03, 0.06)        # 邊界推移量，佔該邊長的�
 JITTER = (0.01, 0.02, 0.04, 0.08)          # 抖動 oracle 的相對雜訊 σ
 EDGES = ("bottom", "top", "right", "left")  # crop 座標裡的四條邊
 SWAPS = ("ang", "center", "size")           # 換框測試：GT 框只換掉這一項
+SEG_CKPT = ["checkpoints_obb"]              # 由 --ckpt-dir 設定
 
 
 def dice(a, b):
@@ -151,7 +152,7 @@ def swap(gt, pred, part):
 def load_seg(tag, fold):
     arch, enc = split_tag(tag)
     m = build_seg2(arch, enc, pretrained=False)
-    m.load_state_dict(torch.load(ROOT / "checkpoints_obb" / "seg2" / tag / f"fold{fold}.pt",
+    m.load_state_dict(torch.load(ROOT / SEG_CKPT[0] / "seg2" / tag / f"fold{fold}.pt",
                                  map_location="cpu", weights_only=False)["model"])
     return m.eval()
 
@@ -295,7 +296,10 @@ def main():
     ap.add_argument("--thr", type=float, default=0.35)
     ap.add_argument("--max-images", type=int, default=0, help="每折最多幾張，0 = 全部")
     ap.add_argument("--device", default="auto", help="auto / cpu / cuda / mps")
+    ap.add_argument("--ckpt-dir", default="checkpoints_obb",
+                    help="第二階段權重目錄；框擾動訓練的版本是 checkpoints_obb_jit")
     args = ap.parse_args()
+    SEG_CKPT[0] = args.ckpt_dir
 
     device = args.device
     if device == "auto":
@@ -309,7 +313,7 @@ def main():
         rows += run(f, args.model, args.thr, args.max_images, rng, device)
     EVAL.mkdir(parents=True, exist_ok=True)
     keys = sorted({k for r in rows for k in r}, key=lambda k: (k not in ("fold", "image", "gt_idx"), k))
-    with (EVAL / f"diag_box_leak_{args.model}.csv").open("w", newline="", encoding="utf-8") as fh:
+    with (EVAL / f"diag_box_leak_{args.ckpt_dir}_{args.model}.csv").open("w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, fieldnames=keys)
         wr.writeheader()
         wr.writerows(rows)
