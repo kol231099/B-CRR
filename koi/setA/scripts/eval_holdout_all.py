@@ -14,9 +14,13 @@ holdout 的 18 張影像與五折的訓練集、驗證集完全零重疊（已�
 部分牙齒，模型找到的其餘牙齒被記成 FP。TP 上的分割指標與 recall 仍然有效，
 precision 與 FP 不得報告。
 
+--only：只評估指定的影像（主檔名，例如 114 122 …）。輸出檔名不變，會覆蓋同名 CSV。
+--ckpt-dir：OBB 第二階段的權重目錄；框擾動版是 checkpoints_obb_jit，輸出檔名加 _jit。
+
 用法：
     py scripts/eval_holdout_all.py --variant 1 2 4
     py scripts/eval_holdout_all.py --variant 1 2 3 4 5 --tta
+    py scripts/eval_holdout_all.py --variant 1 4 --ckpt-dir checkpoints_obb_jit --only 114 122
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ NAMES = {1: "MaskRCNN", 2: "MaskRCNN_HBB_HRNet", 3: "YOLOseg",
 OBB_ARCHS = {5: "yolo11s", 6: "yolov8s", 7: "yolo12s", 8: "yolo26s"}
 _cache: dict = {}
 _OBB_ARCH: list = ["yolo11s"]   # 變體 5~8 共用同一段程式，只換這個
+_OBB_CKPT: list = ["checkpoints_obb"]   # 由 --ckpt-dir 設定
 
 
 def maskrcnn(fold: int):
@@ -65,7 +70,7 @@ def seg2(fold: int, obb: bool):
     if key not in _cache:
         arch, enc = split_tag(TAG)
         m = build_seg2(arch, enc, pretrained=False)
-        root = ROOT / ("checkpoints_obb" if obb else "checkpoints")
+        root = ROOT / (_OBB_CKPT[0] if obb else "checkpoints")
         m.load_state_dict(torch.load(root / "seg2" / TAG / f"fold{fold}.pt",
                                      map_location="cpu", weights_only=False)["model"])
         m.eval()
@@ -173,7 +178,13 @@ def main() -> None:
                     help="6/7/8 與 5 同樣是 YOLO-OBB→HRNet，只換偵測器架構")
     ap.add_argument("--thr", type=float, default=0.35)
     ap.add_argument("--tta", action="store_true")
+    ap.add_argument("--ckpt-dir", default="checkpoints_obb",
+                    help="OBB 第二階段權重目錄；框擾動版是 checkpoints_obb_jit")
+    ap.add_argument("--only", nargs="+", default=[], metavar="IMG",
+                    help="只評估這些影像（主檔名，逗號或空白分隔）")
     args = ap.parse_args()
+    _OBB_CKPT[0] = args.ckpt_dir
+    only = {Path(x.strip()).stem for a in args.only for x in a.split(",") if x.strip()}
 
     coco = json.loads((ANN / "holdout.json").read_text(encoding="utf-8"))
     imgs = {i["id"]: i for i in coco["images"]}
@@ -181,8 +192,16 @@ def main() -> None:
     for a in coco["annotations"]:
         if not a.get("iscrowd"):
             per.setdefault(a["image_id"], []).append(a)
+    if only:
+        per = {i: v for i, v in per.items() if Path(imgs[i]["file_name"]).stem in only}
+        miss = only - {Path(imgs[i]["file_name"]).stem for i in per}
+        if miss:
+            print(f"⚠ holdout.json 裡找不到：{', '.join(sorted(miss))}")
+    n_teeth = sum(len(v) for v in per.values())
+    print(f"holdout：{len(per)} 張、{n_teeth} 顆標註牙")
 
-    sfx = "_tta" if args.tta else ""
+    jit = "_jit" if args.ckpt_dir.endswith("_jit") else ""
+    tta = "_tta" if args.tta else ""
     for v in args.variant:
         if v in OBB_ARCHS:
             _OBB_ARCH[0] = OBB_ARCHS[v]
@@ -213,13 +232,14 @@ def main() -> None:
                              for k in ("dice", "iou", "biou", "hd95", "assd")} |
                             {"tp": len(tp), "fp": sum(x["kind"] == "FP" for x in rows),
                              "fn": sum(x["kind"] == "FN" for x in rows)})
+            sfx = (jit if v >= 4 else "") + tta   # 只有 OBB 第二階段吃 --ckpt-dir
             with (EVAL / f"hold5_{NAMES[v]}{sfx}_fold{fold}.csv").open(
                     "w", newline="", encoding="utf-8") as fh:
                 wr = csv.DictWriter(fh, fieldnames=FIELDS)
                 wr.writeheader()
                 wr.writerows(rows)
 
-        print(f"\n變體 {v}　{NAMES[v]}　holdout n=26　{'含' if args.tta else '無'} TTA")
+        print(f"\n變體 {v}　{NAMES[v]}　holdout {len(per)} 張 n={n_teeth}　{'含' if args.tta else '無'} TTA")
         print(f"  {'fold':<6}{'TP':>4}{'FP':>4}{'FN':>4}"
               f"{'Dice':>9}{'IoU':>9}{'B-IoU':>9}{'HD95':>8}{'ASSD':>8}")
         for f, m in enumerate(per_fold):
