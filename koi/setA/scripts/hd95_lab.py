@@ -244,9 +244,10 @@ def where(pred, gt, gray):
     ys, xs = np.nonzero(gt)
     c = np.array([ys.mean(), xs.mean()])
     u = np.linalg.svd(np.stack([ys, xs], 1) - c, full_matrices=False)[2][0]
-    proj = (np.stack([ys, xs], 1) - c) @ u
+    # 不用 @：macOS 的 Accelerate BLAS 會對 matmul 誤報 overflow（數值本身沒錯）
+    proj = (ys - c[0]) * u[0] + (xs - c[1]) * u[1]
     lo, hi = proj.min(), proj.max()
-    t = ((bad - c) @ u - lo) / max(hi - lo, 1e-6)          # 0..1
+    t = ((bad[:, 0] - c[0]) * u[0] + (bad[:, 1] - c[1]) * u[1] - lo) / max(hi - lo, 1e-6)  # 0..1
     tg = (proj - lo) / max(hi - lo, 1e-6)
     g = gray[ys, xs].astype(np.float32)
     crown_hi = g[tg > 0.8].mean() > g[tg < 0.2].mean()
@@ -301,8 +302,8 @@ def main():
           f"配到偵測 {len(ok)}、漏檢 {len(teeth) - len(ok)}")
 
     # 逐顆牙、逐變體算指標
-    rows = []
-    for t in ok:
+    rows, t0 = [], time.time()
+    for n_, t in enumerate(ok, 1):
         # 快取存 float16 省空間；OpenCV 的模糊不吃 float16，先轉回 float32
         r = {k: (v if k == "gray" else np.asarray(v, np.float32)) for k, v in t["rec"].items()}
         gt = r["gt"] > 0.5
@@ -317,6 +318,8 @@ def main():
             if name.startswith(("M  Mask R-CNN（", "E  HRNet")):
                 row[f"{k}|where"] = "/".join(where(pred, gt, r["gray"]))
         rows.append(row)
+        if n_ % 20 == 0 or n_ == len(ok):
+            print(f"  算指標 {n_}/{len(ok)}　已花 {time.time() - t0:.0f}s", flush=True)
 
     with (out / f"teeth_{tag}.csv").open("w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, fieldnames=list(rows[0]))
