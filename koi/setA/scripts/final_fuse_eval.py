@@ -198,6 +198,7 @@ def main():
     ap.add_argument("--base-ckpt-dir", default="checkpoints_obb_base",
                     help="--no-jitter 重訓的 ④；目錄不存在就略過")
     ap.add_argument("--thr", type=float, default=0.35, help="偵測門檻，須與 Table 1 相同")
+    ap.add_argument("--no-tta", action="store_true", help="不跑 TTA 兩組（論文表格用不到，省一半時間）")
     ap.add_argument("--allow-stale", action="store_true",
                     help="權重比標註檔舊時仍繼續（預設會停下，避免拿重標前的權重評估）")
     args = ap.parse_args()
@@ -226,8 +227,9 @@ def main():
 
     stale_check(args.ckpt_dir, args.allow_stale)
     jit = lambda f: load_jit(args.ckpt_dir, f)   # noqa: E731
-    jobs = [(False, {"M": "FUS_MaskRCNN", "E": "FUS_OBBjit", "F": "FUS_fuse"}, jit),
-            (True, {"M": "FUS_MaskRCNN_tta", "F": "FUS_fuse_tta"}, jit)]
+    jobs = [(False, {"M": "FUS_MaskRCNN", "E": "FUS_OBBjit", "F": "FUS_fuse"}, jit)]
+    if not args.no_tta:
+        jobs.append((True, {"M": "FUS_MaskRCNN_tta", "F": "FUS_fuse_tta"}, jit))
     if (ROOT / args.base_ckpt_dir / "seg2" / TAG / "fold0.pt").exists():
         base = lambda f: load_jit(args.base_ckpt_dir, f)   # noqa: E731
         jobs.append((False, {"E": "FUS_OBBbase", "F": "FUS_fuse_base"}, base))

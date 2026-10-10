@@ -31,7 +31,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from scipy.stats import wilcoxon
+from scipy.stats import friedmanchisquare, wilcoxon
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from icc import icc  # noqa: E402
@@ -255,6 +255,11 @@ def paper_table(args, common, area):
         wr = csv.DictWriter(fh, fieldnames=list(out_rows[0]))
         wr.writeheader()
         wr.writerows(out_rows)
+    print(f"\n  Friedman 檢定（{len(names)} 條 pipeline，n = {len(common)}，每顆牙先取五折平均）：")
+    for m, lab in metrics:
+        cols = [[tooth_mean(data[n], common, m)[k] for k in common] for n in names]
+        r = friedmanchisquare(*cols)
+        print(f"    {lab:<10} χ²({len(names) - 1}) = {r.statistic:.2f}　p = {r.pvalue:.2e}")
     print(f"\n  ※ Area ICC 是整組牙的單一統計量，沒有逐顆配對值，不做檢定（表上填「—」）。")
     print(f"  ※ Holm 校正在每個指標內、對 {len(args.compare)} 個比較進行。")
     print(f"  → {out}")
