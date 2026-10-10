@@ -21,9 +21,13 @@ B. 誤差拆解：把每顆牙的錯誤像素分成「兩個模型都錯」與�
 C. 變體：融合權重、clean_mask 的替代規則，與 Mask R-CNN 逐顆配對比較。
    這裡挑出的設定之後要在 holdout 上只確認一次。
 
+--extra 名稱=權重目錄[@高,寬]：再加一個第二階段版本一起比（例如框擾動 + 邊界損失、
+框擾動 + 768×384），會多出「X 名稱」與「F 融合 名稱」兩列。加了 --extra 會重新推論。
+
 用法（在 koi/setA/final 底下）：
     python3 scripts/final_lab.py
     python3 scripts/final_lab.py --reuse
+    python3 scripts/final_lab.py --extra BL=checkpoints_obb_jit_bl --extra R768=checkpoints_obb_jit_r768@768,384
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from scipy.stats import wilcoxon
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import eval_holdout_all as E  # noqa: E402  final 版
+import eval_seg2_holdout as ESH  # noqa: E402
 from eval_seg2_holdout import gt_mask, predict  # noqa: E402
 from make_crops_obb import obb_of, warp_of  # noqa: E402
 from metrics import assd, hd95  # noqa: E402
@@ -71,10 +76,17 @@ def load_seg(ckdir, fold):
     return m.eval()
 
 
-def hr_prob(seg, gray, box):
+def hr_prob(seg, gray, box, size=None):
+    """size：第二階段輸入解析度 (高, 寬)；None 用 final 預設。暫時改 predict() 讀的 SIZE。"""
     h, w = gray.shape
     M, cw, ch = warp_of(*box, PAD)
-    prob = predict([seg], cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR), False)
+    old = ESH.SIZE
+    if size:
+        ESH.SIZE = size
+    try:
+        prob = predict([seg], cv2.warpAffine(gray, M, (cw, ch), flags=cv2.INTER_LINEAR), False)
+    finally:
+        ESH.SIZE = old
     small = cv2.resize(prob, (cw, ch), interpolation=cv2.INTER_LINEAR)
     Mi = cv2.invertAffineTransform(M)
     back = cv2.warpAffine(small, Mi, (w, h), flags=cv2.INTER_LINEAR)
@@ -88,7 +100,7 @@ def iou(a, b):
 
 
 @torch.no_grad()
-def infer_image(fold, seg_j, seg_b, gray, gts):
+def infer_image(fold, seg_j, seg_b, gray, gts, extras=()):
     t = torch.from_numpy(gray).float().div(255).unsqueeze(0).repeat(3, 1, 1)
     out = E.maskrcnn(fold)([t])[0]
     keep = out["scores"].numpy() >= THR
@@ -106,9 +118,12 @@ def infer_image(fold, seg_j, seg_b, gray, gts):
         p_b, _ = hr_prob(seg_b, gray, box)
         maps = {"gt": gt.astype(np.float32), "p_m": pm[i], "p_j": p_j, "p_b": p_b,
                 "inbox": inbox.astype(np.float32)}
+        for name, seg_x, size in extras:
+            maps[f"p_x:{name}"] = hr_prob(seg_x, gray, box, size)[0]
         any_ = gt.copy()
-        for k in ("p_m", "p_j", "p_b"):
-            any_ |= maps[k] > 0.05
+        for k in maps:
+            if k.startswith("p_"):
+                any_ |= maps[k] > 0.05
         ys, xs = np.nonzero(any_)
         y0, y1 = max(ys.min() - MARGIN, 0), min(ys.max() + MARGIN + 1, gt.shape[0])
         x0, x1 = max(xs.min() - MARGIN, 0), min(xs.max() + MARGIN + 1, gt.shape[1])
@@ -118,7 +133,13 @@ def infer_image(fold, seg_j, seg_b, gray, gts):
     return recs
 
 
-def build_cache(ck_jit, ck_base):
+def parse_extra(spec):
+    name, rest = spec.split("=", 1)
+    ck, size = (rest.split("@") + [None])[:2]
+    return name, ck, (tuple(int(v) for v in size.split(",")) if size else None)
+
+
+def build_cache(ck_jit, ck_base, extras=()):
     teeth, t0 = [], time.time()
     jobs = []
     for fold in range(5):
@@ -134,13 +155,14 @@ def build_cache(ck_jit, ck_base):
     for n, (fold, im, anns) in enumerate(jobs, 1):
         if fold != cur:
             seg_j, seg_b, cur = load_seg(ck_jit, fold), load_seg(ck_base, fold), fold
+            segx = [(n_, load_seg(ck, fold), sz) for n_, ck, sz in extras]
         gray = cv2.imread(str(IMAGES / im["file_name"]), cv2.IMREAD_GRAYSCALE)
         if gray is None:
             print(f"  ⚠ 讀不到 {IMAGES / im['file_name']}")
             continue
         h, w = gray.shape
         gts = np.stack([gt_mask(a, h, w) for a in anns])
-        for gi, rec in enumerate(infer_image(fold, seg_j, seg_b, gray, gts)):
+        for gi, rec in enumerate(infer_image(fold, seg_j, seg_b, gray, gts, segx)):
             teeth.append({"fold": fold, "image": im["file_name"], "tooth": gi, "rec": rec})
         el = time.time() - t0
         print(f"  推論 {n}/{len(jobs)}　fold {fold}　{im['file_name']}　已花 {el:.0f}s　"
@@ -177,7 +199,7 @@ def keep_anchored(m, anchor, min_frac=0.05):
     return fill_holes(keep) if keep.any() else keep_largest(m)
 
 
-def variants():
+def variants(extra_names=()):
     """名稱 → 函式(rec) → 二值遮罩。"""
     def fuse(r, w):
         return w * r["p_j"] + (1 - w) * r["p_m"]
@@ -191,6 +213,9 @@ def variants():
     }
     for w in (0.3, 0.4, 0.6, 0.7):
         V[f"F  融合 w_HR={w}"] = lambda r, w=w: keep_largest(fuse(r, w) > 0.5)
+    for n in extra_names:
+        V[f"X  {n}"] = lambda r, n=n: keep_largest(r[f"p_x:{n}"] > 0.5)
+        V[f"F  融合 {n}"] = lambda r, n=n: keep_largest(0.5 * r[f"p_x:{n}"] + 0.5 * r["p_m"] > 0.5)
     return V
 
 
@@ -357,22 +382,24 @@ def main():
     ap.add_argument("--ckpt-jit", default="checkpoints_obb_jit")
     ap.add_argument("--ckpt-base", default="checkpoints_obb_base")
     ap.add_argument("--reuse", action="store_true")
+    ap.add_argument("--extra", action="append", default=[], metavar="名稱=目錄[@高,寬]")
     args = ap.parse_args()
+    extras = [parse_extra(x) for x in args.extra]
     warnings.filterwarnings("ignore")
 
     OUT.mkdir(parents=True, exist_ok=True)
-    cache = OUT / "cache_oof.pkl.gz"
+    cache = OUT / ("cache_oof" + "".join(f"_{n}" for n, _, _ in extras) + ".pkl.gz")
     if args.reuse and cache.exists():
         teeth = pickle.load(gzip.open(cache, "rb"))
         print(f"讀取快取：{len(teeth)} 筆")
     else:
-        teeth = build_cache(args.ckpt_jit, args.ckpt_base)
+        teeth = build_cache(args.ckpt_jit, args.ckpt_base, extras)
         with gzip.open(cache, "wb") as fh:
             pickle.dump(teeth, fh)
 
     ok = [t for t in teeth if t["rec"] is not None]
     print(f"\n{len(teeth)} 顆牙，Mask R-CNN 配到 {len(ok)}，漏檢 {len(teeth) - len(ok)}")
-    V = variants()
+    V = variants([n for n, _, _ in extras])
 
     # 學習式融合（交叉擬合，不用 GT 以外的未來資訊）
     print("\n學習式融合：交叉擬合中……", flush=True)
@@ -508,8 +535,8 @@ def main():
               f"{int((h >= BIG).sum()):>8}")
     print(f"\n  與現行融合配對（HD95）：")
     bf = col(f"{F0}|hd95")
-    for name in ("F  依信心加權", "F  依區域加權（學習）", "F  邏輯迴歸融合（學習）",
-                 "F  融合 w_HR=0.4"):
+    for name in ["F  依信心加權", "F  依區域加權（學習）", "F  邏輯迴歸融合（學習）",
+                 "F  融合 w_HR=0.4"] + [f"F  融合 {n}" for n, _, _ in extras]:
         h = col(f"{name}|hd95")
         okm = np.isfinite(h) & np.isfinite(bf)
         d = h[okm] - bf[okm]
