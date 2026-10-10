@@ -12,6 +12,8 @@
 用法（在 koi/setA/final 底下）：
     python3 scripts/final_table.py --list                      # 列出 eval/ 裡有哪些 hold5_ 名稱
     python3 scripts/final_table.py --ref 名稱1 名稱2 名稱3 名稱4 名稱5
+    # +TTA 表：--ref 換成五條的 _tta 版本，--new 只列 TTA 版的新方法
+    python3 scripts/final_table.py --ref MaskRCNN_tta ... --new FUS_fuse_tta
 """
 
 from __future__ import annotations
@@ -105,6 +107,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--ref", nargs="+", help="Table 1 原本五條 pipeline 的 hold5_ 名稱，第一個必須是 Mask R-CNN")
+    ap.add_argument("--new", nargs="+", default=None,
+                    help="下半部要列哪些新方法（hold5_ 名稱）；預設列出全部 FUS_*")
     args = ap.parse_args()
 
     if args.list or not args.ref:
@@ -121,7 +125,9 @@ def main():
     common = sorted(set.intersection(*sets) & set(area))
     print(f"\n共同命中 n = {len(common)}（Table 1 為 13）\n")
 
-    new = [(lab, n, load(n)) for lab, n in NEW if (EVAL / f"hold5_{n}_fold0.csv").exists()]
+    labels = dict((n, lab) for lab, n in NEW)
+    picked = args.new if args.new else [n for _, n in NEW]
+    new = [(labels.get(n, n), n, load(n)) for n in picked if (EVAL / f"hold5_{n}_fold0.csv").exists()]
     hdr = f"  {'Pipeline':<34}{'DICE':>8}{'IOU':>8}{'HD95':>8}{'ASSD':>8}{'AreaICC':>9}{'缺牙':>6}"
     print(hdr + "\n  " + "─" * (len(hdr) - 2))
     for n, folds in ref.items():
@@ -139,13 +145,16 @@ def main():
 
     # 配對檢定：n = 13（共同命中）與 Mask R-CNN 系列都命中的全部牙
     mr = ref[args.ref[0]]
-    pairs = [("+ 融合", "FUS_fuse", mr, args.ref[0]),
-             ("+ 融合（HRNet 不擾動）", "FUS_fuse_base", mr, args.ref[0]),
-             ("+ 框擾動 HRNet（單獨）", "FUS_OBBjit", mr, args.ref[0])]
-    if (EVAL / "hold5_FUS_OBBbase_fold0.csv").exists():
-        pairs.append(("+ 融合", "FUS_fuse", load("FUS_OBBbase"), "④ 重訓"))
-    if (EVAL / "hold5_FUS_MaskRCNN_tta_fold0.csv").exists():
-        pairs.append(("+ 融合 +TTA", "FUS_fuse_tta", load("FUS_MaskRCNN_tta"), "FUS_MaskRCNN_tta"))
+    if args.new:   # 自訂列：每個新方法都與 --ref 第一個（Mask R-CNN）配對
+        pairs = [(labels.get(n, n), n, mr, args.ref[0]) for n in args.new]
+    else:
+        pairs = [("+ 融合", "FUS_fuse", mr, args.ref[0]),
+                 ("+ 融合（HRNet 不擾動）", "FUS_fuse_base", mr, args.ref[0]),
+                 ("+ 框擾動 HRNet（單獨）", "FUS_OBBjit", mr, args.ref[0])]
+        if (EVAL / "hold5_FUS_OBBbase_fold0.csv").exists():
+            pairs.append(("+ 融合", "FUS_fuse", load("FUS_OBBbase"), "④ 重訓"))
+        if (EVAL / "hold5_FUS_MaskRCNN_tta_fold0.csv").exists():
+            pairs.append(("+ 融合 +TTA", "FUS_fuse_tta", load("FUS_MaskRCNN_tta"), "FUS_MaskRCNN_tta"))
     all_mr = set.intersection(*(set(tp_map(f)) for f in mr)) & set(area)
     print(f"\n配對 Wilcoxon（同一顆牙五折平均；勝 = 新方法較好的牙數）")
     for lab, n, base, bname in pairs:
