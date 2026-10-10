@@ -42,7 +42,7 @@ tail -f run_all.out
 ```
 
 RunPod 等遠端機器建議用 `nohup` 或 `tmux`，斷線也不會中止。裝置預設 `cuda`（YOLO 用 GPU 0），
-要改可在前面加 `DEVICE=mps YOLO_DEVICE=mps`。
+要改可在前面加 `DEVICE=mps YOLO_DEVICE=mps MR_DEVICE=cpu`（Mac：Mask R-CNN 在 MPS 會卡住，須用 cpu）。
 
 ### 腳本會自動做的事
 

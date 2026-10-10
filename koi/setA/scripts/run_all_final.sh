@@ -18,7 +18,8 @@
 set -euo pipefail
 
 # ─────────────────────────── 設定（只需要看這一段） ───────────────────────────
-DEVICE="${DEVICE:-cuda}"            # Mask R-CNN 與 HRNet：cuda / mps / cpu
+DEVICE="${DEVICE:-cuda}"            # HRNet：cuda / mps / cpu
+MR_DEVICE="${MR_DEVICE:-$DEVICE}"   # Mask R-CNN：預設同 DEVICE；Mac 上請設 cpu（torchvision 偵測模型在 MPS 會卡住）
 YOLO_DEVICE="${YOLO_DEVICE:-0}"     # YOLO：GPU 編號，或 mps / cpu
 FOLDS="0 1 2 3 4"
 MR_EPOCHS=40
@@ -59,7 +60,7 @@ for k in $FOLDS; do
   [[ "yolo/fold$k/data.yaml" -nt annotations/instances_all.json ]] \
     || die "yolo/fold$k 比標註舊，請先重跑 python3 scripts/make_yolo.py"
 done
-[[ -n "$YOLO_EVAL" ]] || die "YOLO_EVAL 未設定：請填入原本產生 YOLO holdout 結果檔的指令（見腳本最上方）"
+[[ -n "$YOLO_EVAL" && "$YOLO_EVAL" != *"<"* ]] || die "YOLO_EVAL 未設定：請填入原本產生 YOLO holdout 結果檔的指令（見腳本最上方）"
 read -r -a YM <<< "$YOLO_MODELS"; read -r -a YN <<< "$YOLO_NAMES"
 [[ ${#YM[@]} -eq ${#YN[@]} ]] || die "YOLO_MODELS 與 YOLO_NAMES 數量不同"
 python3 -c "import torch, ultralytics, scipy" || die "缺少 torch / ultralytics / scipy"
@@ -90,7 +91,7 @@ echo "  環境 → $LOG/env.txt"
 step "1. Mask R-CNN（${MR_EPOCHS} epochs × 5 折）"
 for k in $FOLDS; do
   is_done "maskrcnn_fold$k" && { echo "  fold $k 已完成，跳過"; continue; }
-  python3 scripts/train_maskrcnn.py --fold "$k" --epochs "$MR_EPOCHS" --device "$DEVICE" \
+  python3 scripts/train_maskrcnn.py --fold "$k" --epochs "$MR_EPOCHS" --device "$MR_DEVICE" \
     2>&1 | tee "$LOG/maskrcnn_fold$k.log"
   done_mark "maskrcnn_fold$k"
 done
