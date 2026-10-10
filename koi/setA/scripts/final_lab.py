@@ -194,6 +194,110 @@ def variants():
     return V
 
 
+# ================================================================ 學習式融合（只用推論時拿得到的資訊）
+
+def axis_t(r):
+    """沿 Mask R-CNN 遮罩主軸的位置 t（0 = 根端、1 = 冠端，冠端以較亮的一端判定）。不用 GT。"""
+    mm = r["p_m"] > 0.5
+    if mm.sum() < 20:
+        return np.full(mm.shape, 0.5, np.float32)
+    ys, xs = np.nonzero(mm)
+    c = np.array([ys.mean(), xs.mean()])
+    u = np.linalg.svd(np.stack([ys, xs], 1) - c, full_matrices=False)[2][0]
+    yy, xx = np.mgrid[0:mm.shape[0], 0:mm.shape[1]]
+    proj = (yy - c[0]) * u[0] + (xx - c[1]) * u[1]
+    lo, hi = proj[mm].min(), proj[mm].max()
+    t = (proj - lo) / max(hi - lo, 1e-6)
+    g = r["gray"].astype(np.float32)
+    if g[mm & (t > 0.8)].mean() < g[mm & (t < 0.2)].mean():
+        t = 1 - t
+    return np.clip(t, -0.3, 1.3).astype(np.float32)
+
+
+def region_of(t):
+    return np.where(t > 0.8, 2, np.where(t < 0.2, 0, 1))   # 0 根端、1 側邊、2 冠端
+
+
+def logit(p):
+    p = np.clip(p, 1e-4, 1 - 1e-4)
+    return np.log(p / (1 - p))
+
+
+def features(r, t):
+    g = r["gray"].astype(np.float32) / 255.0
+    sob = np.hypot(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
+    lm, lj = logit(r["p_m"]), logit(r["p_j"])
+    tc = np.clip(t, 0, 1)
+    return np.stack([np.ones_like(lm), lm, lj, g, sob, tc, tc ** 2, lm * tc, lj * tc,
+                     np.abs(lm - lj)], -1).astype(np.float32)
+
+
+def band(r, width=10):
+    """兩個模型邊界附近的像素（推論時可得，不用 GT），學習只在這裡做。"""
+    out = np.zeros(r["p_m"].shape, bool)
+    for k in ("p_m", "p_j"):
+        m = (r[k] > 0.5).astype(np.uint8)
+        e = cv2.morphologyEx(m, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > 0
+        d = cv2.distanceTransform((~e).astype(np.uint8), cv2.DIST_L2, 3)
+        out |= d <= width
+    return out
+
+
+def fit_logistic(X, y, l2=1e-3):
+    from scipy.optimize import minimize
+
+    def f(w):
+        z = X @ w
+        loss = np.mean(np.logaddexp(0, z) - y * z) + l2 * (w[1:] ** 2).sum()
+        p = 1 / (1 + np.exp(-z))
+        grad = X.T @ (p - y) / len(y)
+        grad[1:] += 2 * l2 * w[1:]
+        return loss, grad
+    w0 = np.zeros(X.shape[1])
+    return minimize(f, w0, jac=True, method="L-BFGS-B").x
+
+
+def cross_fit(prepped, rng):
+    """以 fold 為單位交叉擬合：每折用其他四折的牙學參數。回傳 {(fold,image,tooth): 遮罩}。"""
+    out_stack, out_region = {}, {}
+    folds = sorted({p["fold"] for p in prepped})
+    grid = np.linspace(0, 1, 11)
+    for f in folds:
+        tr = [p for p in prepped if p["fold"] != f]
+        # 邏輯迴歸：每顆牙在邊界帶內最多抽 1500 點
+        Xs, ys = [], []
+        for p in tr:
+            idx = np.flatnonzero(p["band"].ravel())
+            if len(idx) > 1500:
+                idx = rng.choice(idx, 1500, replace=False)
+            Xs.append(p["X"].reshape(-1, p["X"].shape[-1])[idx])
+            ys.append(p["gt"].ravel()[idx].astype(np.float32))
+        w = fit_logistic(np.concatenate(Xs), np.concatenate(ys))
+        # 區域權重：每個區域挑使錯誤像素最少的 w_HR
+        best = {}
+        for reg in (0, 1, 2):
+            errs = []
+            for wj in grid:
+                e = 0
+                for p in tr:
+                    msk = p["reg"] == reg
+                    pred = (wj * p["p_j"] + (1 - wj) * p["p_m"]) > 0.5
+                    e += int(((pred ^ p["gt"]) & msk).sum())
+                errs.append(e)
+            best[reg] = grid[int(np.argmin(errs))]
+        for p in [q for q in prepped if q["fold"] == f]:
+            key = (p["fold"], p["image"], p["tooth"])
+            z = p["X"] @ w
+            prob = 1 / (1 + np.exp(-z))
+            fused = 0.5 * p["p_j"] + 0.5 * p["p_m"]
+            prob = np.where(p["band"], prob, fused)          # 帶外照舊融合
+            out_stack[key] = keep_largest(prob > 0.5)
+            wmap = np.vectorize(best.get)(p["reg"]).astype(np.float32)
+            out_region[key] = keep_largest((wmap * p["p_j"] + (1 - wmap) * p["p_m"]) > 0.5)
+        print(f"  fold {f}：區域權重 w_HR 根 {best[0]:.1f} / 側 {best[1]:.1f} / 冠 {best[2]:.1f}", flush=True)
+    return out_stack, out_region
+
+
 # ================================================================ 診斷
 
 def where(pred, gt, gray):
@@ -269,14 +373,42 @@ def main():
     ok = [t for t in teeth if t["rec"] is not None]
     print(f"\n{len(teeth)} 顆牙，Mask R-CNN 配到 {len(ok)}，漏檢 {len(teeth) - len(ok)}")
     V = variants()
+
+    # 學習式融合（交叉擬合，不用 GT 以外的未來資訊）
+    print("\n學習式融合：交叉擬合中……", flush=True)
+    rng = np.random.default_rng(0)
+    prepped = []
+    for t in ok:
+        r = {k: (v if k == "gray" else np.asarray(v, np.float32)) for k, v in t["rec"].items()}
+        tt = axis_t(r)
+        prepped.append({"fold": t["fold"], "image": t["image"], "tooth": t["tooth"],
+                        "p_m": r["p_m"], "p_j": r["p_j"], "gt": r["gt"] > 0.5,
+                        "X": features(r, tt), "band": band(r), "reg": region_of(tt), "t": tt})
+    stack, regw = cross_fit(prepped, rng)
+    pk = {(p["fold"], p["image"], p["tooth"]): p for p in prepped}
+
+    def conf_w(r):
+        cm, cj = np.abs(r["p_m"] - 0.5), np.abs(r["p_j"] - 0.5)
+        return keep_largest((cm * r["p_m"] + cj * r["p_j"]) / (cm + cj + 1e-6) > 0.5)
+    V["F  依信心加權"] = conf_w
+    V["F  依區域加權（學習）"] = None
+    V["F  邏輯迴歸融合（學習）"] = None
+
     rows, t0 = [], time.time()
+    reg_err = np.zeros((3, 3))     # [區域, 兩者都錯/只有①錯/只有HRNet錯]
     for n, t in enumerate(ok, 1):
         r = {k: (v if k == "gray" else np.asarray(v, np.float32)) for k, v in t["rec"].items()}
         gt = r["gt"] > 0.5
         row = {"fold": t["fold"], "image": t["image"], "tooth": t["tooth"]}
         preds = {}
+        key = (t["fold"], t["image"], t["tooth"])
         for name, fn in V.items():
-            p = fn(r)
+            if name == "F  依區域加權（學習）":
+                p = regw[key]
+            elif name == "F  邏輯迴歸融合（學習）":
+                p = stack[key]
+            else:
+                p = fn(r)
             preds[name] = p
             row[f"{name}|dice"] = 2 * (p & gt).sum() / max(p.sum() + gt.sum(), 1)
             row[f"{name}|hd95"] = hd95(p, gt)
@@ -286,6 +418,11 @@ def main():
         row["H1"], row["H2"], row["H3"] = hypotheses(r, gt)
         row["both"], row["onlyM"], row["onlyJ"] = shared_error(
             preds["M  Mask R-CNN"], preds["J  框擾動 HRNet"], gt)
+        em_, ej_ = preds["M  Mask R-CNN"] ^ gt, preds["J  框擾動 HRNet"] ^ gt
+        reg = pk[key]["reg"]
+        for k_ in (0, 1, 2):
+            msk = reg == k_
+            reg_err[k_] += [(em_ & ej_ & msk).sum(), (em_ & ~ej_ & msk).sum(), (~em_ & ej_ & msk).sum()]
         row["errM"] = int((preds["M  Mask R-CNN"] ^ gt).sum())
         row["errF"] = int((preds["F  融合 0.5（現行）"] ^ gt).sum())
         rows.append(row)
@@ -338,6 +475,17 @@ def main():
     print(f"  → 相對 ①，理想組合最多可減少 {gain / eM:.0%} 的錯誤像素；"
           f"現行融合實際減少 {(eM - eF) / eM:.0%}，"
           f"拿到可得空間的 {(eM - eF) / gain:.0%}" if gain > 0 else "  → 兩者錯誤完全重疊")
+    print("\n  依區域（以 Mask R-CNN 遮罩主軸判定，較亮端為冠）：")
+    for k_, lab in ((2, "冠端"), (1, "側邊"), (0, "根端")):
+        a, m_, j_ = reg_err[k_]
+        s_ = a + m_ + j_
+        print(f"    {lab}　佔全部錯誤 {s_ / reg_err.sum():5.1%}　其中 兩者都錯 {a / max(s_, 1):5.1%}　"
+              f"只有①錯 {m_ / max(s_, 1):5.1%}　只有HRNet錯 {j_ / max(s_, 1):5.1%}")
+    sh = np.sort(col("both"))[::-1]
+    k10 = max(1, len(sh) // 10)
+    print(f"\n  「兩者都錯」的集中度：最差 10%（{k10} 顆）的牙貢獻了 {sh[:k10].sum() / max(sh.sum(), 1):.0%}")
+    worst = sorted(rows, key=lambda r: -r["both"])[:k10]
+    print("    " + "、".join(f"{r['image']}#{r['tooth']}" for r in worst))
     print("  判讀：拿到的比例低 → 更聰明的組合方式（依信心、依位置加權）值得做；"
           "\n        「兩者都錯」佔多數 → 組合類方法已到頂，要改模型本身或檢查標註。")
 
@@ -358,6 +506,20 @@ def main():
               f"{np.nanmean(h):>10.2f}{np.nanmedian(col(name + '|assd')):>10.2f}"
               f"{(d < 0).mean():>7.0%}{'' if np.isnan(p) else f'{p:.4f}':>10}"
               f"{int((h >= BIG).sum()):>8}")
+    print(f"\n  與現行融合配對（HD95）：")
+    bf = col(f"{F0}|hd95")
+    for name in ("F  依信心加權", "F  依區域加權（學習）", "F  邏輯迴歸融合（學習）",
+                 "F  融合 w_HR=0.4"):
+        h = col(f"{name}|hd95")
+        okm = np.isfinite(h) & np.isfinite(bf)
+        d = h[okm] - bf[okm]
+        try:
+            p = wilcoxon(h[okm], bf[okm]).pvalue if np.any(d != 0) else np.nan
+        except ValueError:
+            p = np.nan
+        print(f"    {name:<22} 平均差 {d.mean():+.2f} px　勝 {(d < 0).sum()}/負 {(d > 0).sum()}　"
+              f"p={'' if np.isnan(p) else f'{p:.4f}'}　Dice 平均差 "
+              f"{(col(name + '|dice') - col(F0 + '|dice')).mean():+.4f}")
     print(f"\n逐顆明細 → {OUT / 'teeth_oof.csv'}")
 
 
