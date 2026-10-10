@@ -14,7 +14,8 @@
     FUS_OBBbase       重訓的 ④（與擾動版同一支腳本、同一組參數）
     FUS_fuse_base     融合，但 HRNet 用不擾動的重訓 ④（消融：融合是否需要擾動）
 
-新方法輸出四組（檔名都以 hold5_FUS_ 開頭，不覆蓋既有結果）：
+新方法輸出（檔名都以 hold5_FUS_ 開頭，不覆蓋既有結果）：
+    FUS_MaskRCNN      單階段 Mask R-CNN（同一次推論順便輸出；重標後 Table 1 的 Mask R-CNN 列用這個）
     FUS_OBBjit        Mask R-CNN → OBB → 框擾動版 HRNet（單獨，消融用）
     FUS_fuse          clean_mask(0.5·P_HRNet + 0.5·P_MaskRCNN > 0.5)，無 TTA，與 Table 1 同規則
     FUS_MaskRCNN_tta  Mask R-CNN + 翻轉 TTA（給 TTA 版融合當公平對照）
@@ -60,6 +61,23 @@ def load_jit(ckdir, fold):
     m.load_state_dict(torch.load(ROOT / ckdir / "seg2" / TAG / f"fold{fold}.pt",
                                  map_location="cpu", weights_only=False)["model"])
     return m.eval()
+
+
+def stale_check(ckdir, allow):
+    """權重若比 annotations/instances_all.json 舊，代表是重標前訓練的，評估結果會混用新舊資料。"""
+    ref = (ANN / "instances_all.json").stat().st_mtime
+    files = [ROOT / ckdir / "seg2" / TAG / f"fold{k}.pt" for k in range(5)]
+    files += sorted((ROOT / "checkpoints").rglob("maskrcnn_fold*.pt"))
+    missing = [f for f in files[:5] if not f.exists()]
+    old = [f for f in files if f.exists() and f.stat().st_mtime < ref]
+    for f in missing:
+        print(f"  ✗ 找不到 {f.relative_to(ROOT)}")
+    for f in old:
+        print(f"  ✗ {f.relative_to(ROOT)} 比標註檔舊（重標前訓練的？）")
+    if not any("maskrcnn" in f.name for f in files):
+        print("  ⚠ checkpoints/ 底下找不到 maskrcnn_fold*.pt，無法檢查 Mask R-CNN 權重的新舊")
+    if missing or (old and not allow):
+        sys.exit("⚠ 權重不齊或比標註舊，已停止。確定沒問題可加 --allow-stale。")
 
 
 @torch.no_grad()
@@ -180,6 +198,8 @@ def main():
     ap.add_argument("--base-ckpt-dir", default="checkpoints_obb_base",
                     help="--no-jitter 重訓的 ④；目錄不存在就略過")
     ap.add_argument("--thr", type=float, default=0.35, help="偵測門檻，須與 Table 1 相同")
+    ap.add_argument("--allow-stale", action="store_true",
+                    help="權重比標註檔舊時仍繼續（預設會停下，避免拿重標前的權重評估）")
     args = ap.parse_args()
 
     if ROOT.name != "final":
@@ -204,8 +224,9 @@ def main():
                       "請把上面的輸出貼回來。"))
         return
 
+    stale_check(args.ckpt_dir, args.allow_stale)
     jit = lambda f: load_jit(args.ckpt_dir, f)   # noqa: E731
-    jobs = [(False, {"E": "FUS_OBBjit", "F": "FUS_fuse"}, jit),
+    jobs = [(False, {"M": "FUS_MaskRCNN", "E": "FUS_OBBjit", "F": "FUS_fuse"}, jit),
             (True, {"M": "FUS_MaskRCNN_tta", "F": "FUS_fuse_tta"}, jit)]
     if (ROOT / args.base_ckpt_dir / "seg2" / TAG / "fold0.pt").exists():
         base = lambda f: load_jit(args.base_ckpt_dir, f)   # noqa: E731
