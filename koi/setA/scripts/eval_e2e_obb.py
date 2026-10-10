@@ -44,7 +44,7 @@ EVAL, PAD = ROOT / "eval", 0.2
 def load_seg2_obb(tag: str, fold: int):
     arch, enc = split_tag(tag)
     m = build_seg2(arch, enc, pretrained=False)
-    m.load_state_dict(torch.load(ROOT / "checkpoints_obb" / "seg2" / tag / f"fold{fold}.pt",
+    m.load_state_dict(torch.load(ROOT / _CKDIR[0] / "seg2" / tag / f"fold{fold}.pt",
                                  map_location="cpu", weights_only=False)["model"])
     m.eval()
     return m
@@ -101,6 +101,7 @@ def obbs_yolo(fold: int, path: Path, conf: float, use_tta: bool, hw):
 _MR: list = [-1, None]
 _YL: list = [None, None]
 _ARCH: list = ["yolo11s"]   # 由 --arch 設定，決定讀哪個 yolo_obb_runs 子目錄
+_CKDIR: list = ["checkpoints_obb"]   # 由 --ckpt-dir 設定，第二階段權重目錄
 
 
 @torch.no_grad()
@@ -147,10 +148,12 @@ def main() -> None:
     ap.add_argument("--thr", type=float, default=0.35,
                     help="偵測門檻，與 eval_maskrcnn.py / eval_yolo.py 對齊")
     ap.add_argument("--tta", action="store_true")
+    ap.add_argument("--ckpt-dir", default="checkpoints_obb",
+                    help="第二階段權重目錄；框擾動訓練的版本是 checkpoints_obb_jit")
     args = ap.parse_args()
 
-    _ARCH[0] = args.arch
-    sfx = "_tta" if args.tta else ""
+    _ARCH[0], _CKDIR[0] = args.arch, args.ckpt_dir
+    sfx = ("_tta" if args.tta else "") + ("_jit" if args.ckpt_dir.endswith("_jit") else "")
     det_tag = args.arch if args.det == "yoloobb" else "maskrcnn"
     stem = f"obb_{det_tag}_{args.model}{sfx}"
     EVAL.mkdir(parents=True, exist_ok=True)
