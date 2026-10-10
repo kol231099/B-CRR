@@ -16,10 +16,16 @@ train_seg2.main()，只換掉資料集——所以模型、優化器、學習率
 crop 的固定位置，網路因此學會照著框邊畫（實測邊界跟隨斜率 0.2–0.5）。擾動後
 斜率降到 0.01–0.05，網路改為看影像找邊界。
 
-權重寫到 final/checkpoints_obb_jit/，不覆蓋 checkpoints_obb/。
+--no-jitter：不擾動，直接讀 crops_obb/ 的預裁圖——也就是重訓 ④ 本身。用同一支腳本、
+同一組參數訓練 ④ 與擾動版，兩者唯一的差別就只有擾動。
 
-用法（在 koi/setA/final 底下；--epochs 等參數必須與訓練 ④ 時相同）：
-    python3 scripts/final_jit_train.py --arch unet --encoder tu-hrnet_w32 --fold 0 --epochs 20
+權重預設寫到 final/checkpoints_obb_jit/（擾動）或 final/checkpoints_obb_base/（--no-jitter），
+不覆蓋原本的 checkpoints_obb/。每折另存 train_config_fold{k}.json，記下完整參數，
+論文的方法章節可以直接引用。
+
+用法（在 koi/setA/final 底下）：
+    python3 scripts/final_jit_train.py --no-jitter --arch unet --encoder tu-hrnet_w32 --fold 0 --epochs 20 --device mps
+    python3 scripts/final_jit_train.py              --arch unet --encoder tu-hrnet_w32 --fold 0 --epochs 20 --device mps
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -110,12 +117,33 @@ if __name__ == "__main__":
     ap.add_argument("--jit-ang", type=float, default=JIT["ang"])
     ap.add_argument("--jit-shift", type=float, default=JIT["shift"])
     ap.add_argument("--jit-scale", type=float, default=JIT["scale"])
+    ap.add_argument("--no-jitter", action="store_true", help="不擾動：重訓 ④ 本身")
+    ap.add_argument("--out-dir", default=None, help="權重目錄名（final/ 底下）")
     own, rest = ap.parse_known_args()
     JIT.update(ang=own.jit_ang, shift=own.jit_shift, scale=own.jit_scale)
+    out = own.out_dir or ("checkpoints_obb_base" if own.no_jitter else "checkpoints_obb_jit")
     train_seg2.CROPS = CROPS
-    train_seg2.CKPT = ROOT / "checkpoints_obb_jit"
-    train_seg2.CropDataset = JitterCropDataset
-    print(f"框擾動：旋轉±{JIT['ang']}° 平移±{JIT['shift']:.0%} 縮放±{JIT['scale']:.0%}"
-          f"　crop 來源 {CROPS}　權重 → {train_seg2.CKPT}", flush=True)
+    train_seg2.CKPT = ROOT / out
+    if own.no_jitter:
+        print(f"不擾動（重訓 ④）　crop 來源 {CROPS}　權重 → {train_seg2.CKPT}", flush=True)
+    else:
+        train_seg2.CropDataset = JitterCropDataset
+        print(f"框擾動：旋轉±{JIT['ang']}° 平移±{JIT['shift']:.0%} 縮放±{JIT['scale']:.0%}"
+              f"　crop 來源 {CROPS}　權重 → {train_seg2.CKPT}", flush=True)
+
+    # 先記下完整設定，訓練中斷也留得下紀錄
     sys.argv = [sys.argv[0]] + rest
+    probe = argparse.ArgumentParser(add_help=False)
+    probe.add_argument("--fold", type=int, default=0)
+    probe.add_argument("--arch", default="unet")
+    probe.add_argument("--encoder", default="resnet34")
+    fold = probe.parse_known_args(rest)[0]
+    cfg_dir = train_seg2.CKPT / "seg2" / f"{fold.arch}_{fold.encoder}"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / f"train_config_fold{fold.fold}.json").write_text(json.dumps({
+        "argv": rest, "jitter": None if own.no_jitter else JIT, "crops": str(CROPS),
+        "n_crops": sum(1 for _ in open(CROPS / "manifest.csv", encoding="utf-8")) - 1,
+        "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "script": "final_jit_train.py → final/scripts/train_seg2.main()",
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     train_seg2.main()

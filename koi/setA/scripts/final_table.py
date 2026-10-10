@@ -33,7 +33,9 @@ from icc import icc  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 EVAL, ANN = ROOT / "eval", ROOT / "annotations"
-NEW = [("+ 框擾動 HRNet（單獨）", "FUS_OBBjit"),
+NEW = [("④ 重訓（同設定）", "FUS_OBBbase"),
+       ("+ 融合（HRNet 不擾動）", "FUS_fuse_base"),
+       ("+ 框擾動 HRNet（單獨）", "FUS_OBBjit"),
        ("+ 融合（本方法）", "FUS_fuse"),
        ("Mask R-CNN +TTA", "FUS_MaskRCNN_tta"),
        ("+ 融合 +TTA", "FUS_fuse_tta")]
@@ -136,7 +138,10 @@ def main():
     # 配對檢定：n = 13（共同命中）與 Mask R-CNN 系列都命中的全部牙
     mr = ref[args.ref[0]]
     pairs = [("+ 融合", "FUS_fuse", mr, args.ref[0]),
+             ("+ 融合（HRNet 不擾動）", "FUS_fuse_base", mr, args.ref[0]),
              ("+ 框擾動 HRNet（單獨）", "FUS_OBBjit", mr, args.ref[0])]
+    if (EVAL / "hold5_FUS_OBBbase_fold0.csv").exists():
+        pairs.append(("+ 融合", "FUS_fuse", load("FUS_OBBbase"), "④ 重訓"))
     if (EVAL / "hold5_FUS_MaskRCNN_tta_fold0.csv").exists():
         pairs.append(("+ 融合 +TTA", "FUS_fuse_tta", load("FUS_MaskRCNN_tta"), "FUS_MaskRCNN_tta"))
     all_mr = set.intersection(*(set(tp_map(f)) for f in mr)) & set(area)

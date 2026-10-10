@@ -10,6 +10,10 @@
 和既有的 CSV 比對。全部吻合，才代表這支腳本的推論路徑與 Table 1 完全相同，
 新方法的數字才能放進同一張表；不吻合會列出哪幾顆、差多少。
 
+若 final/checkpoints_obb_base/ 存在（用 final_jit_train.py --no-jitter 重訓的 ④），另外輸出：
+    FUS_OBBbase       重訓的 ④（與擾動版同一支腳本、同一組參數）
+    FUS_fuse_base     融合，但 HRNet 用不擾動的重訓 ④（消融：融合是否需要擾動）
+
 新方法輸出四組（檔名都以 hold5_FUS_ 開頭，不覆蓋既有結果）：
     FUS_OBBjit        Mask R-CNN → OBB → 框擾動版 HRNet（單獨，消融用）
     FUS_fuse          clean_mask(0.5·P_HRNet + 0.5·P_MaskRCNN > 0.5)，無 TTA，與 Table 1 同規則
@@ -173,6 +177,8 @@ def main():
     ap.add_argument("--check", nargs=2, metavar=("REF_M", "REF_E"),
                     help="Table 1 中 ① 與 ④ 的 hold5_ 名稱；只做重現檢查")
     ap.add_argument("--ckpt-dir", default="checkpoints_obb_jit")
+    ap.add_argument("--base-ckpt-dir", default="checkpoints_obb_base",
+                    help="--no-jitter 重訓的 ④；目錄不存在就略過")
     ap.add_argument("--thr", type=float, default=0.35, help="偵測門檻，須與 Table 1 相同")
     args = ap.parse_args()
 
@@ -193,8 +199,13 @@ def main():
         return
 
     jit = lambda f: load_jit(args.ckpt_dir, f)   # noqa: E731
-    evaluate([(False, {"E": "FUS_OBBjit", "F": "FUS_fuse"}, jit),
-              (True, {"M": "FUS_MaskRCNN_tta", "F": "FUS_fuse_tta"}, jit)], args.thr)
+    jobs = [(False, {"E": "FUS_OBBjit", "F": "FUS_fuse"}, jit),
+            (True, {"M": "FUS_MaskRCNN_tta", "F": "FUS_fuse_tta"}, jit)]
+    if (ROOT / args.base_ckpt_dir / "seg2" / TAG / "fold0.pt").exists():
+        base = lambda f: load_jit(args.base_ckpt_dir, f)   # noqa: E731
+        jobs.append((False, {"E": "FUS_OBBbase", "F": "FUS_fuse_base"}, base))
+        print(f"一併評估重訓的 ④：{args.base_ckpt_dir}")
+    evaluate(jobs, args.thr)
     print(f"\n完成 → {EVAL}/hold5_FUS_*_fold{{0..4}}.csv")
 
 
