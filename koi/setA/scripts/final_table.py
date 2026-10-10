@@ -14,6 +14,9 @@
     python3 scripts/final_table.py --ref 名稱1 名稱2 名稱3 名稱4 名稱5
     # +TTA 表：--ref 換成五條的 _tta 版本，--new 只列 TTA 版的新方法
     python3 scripts/final_table.py --ref MaskRCNN_tta ... --new FUS_fuse_tta
+    # 論文表格加 p 值：每個 --compare 與 --anchor 逐顆配對（Wilcoxon，Holm 校正）
+    python3 scripts/final_table.py --ref MaskRCNN MaskRCNN_OBB_HRNet yolov8sseg yolo11sseg yolo26sseg \
+        --anchor FUS_fuse --compare MaskRCNN yolov8sseg yolo11sseg yolo26sseg
 """
 
 from __future__ import annotations
@@ -109,6 +112,9 @@ def main():
     ap.add_argument("--ref", nargs="+", help="Table 1 原本五條 pipeline 的 hold5_ 名稱，第一個必須是 Mask R-CNN")
     ap.add_argument("--new", nargs="+", default=None,
                     help="下半部要列哪些新方法（hold5_ 名稱）；預設列出全部 FUS_*")
+    ap.add_argument("--anchor", default=None, help="論文表格的主角（本方法），例如 FUS_fuse")
+    ap.add_argument("--compare", nargs="+", default=None,
+                    help="要與 --anchor 比較的方法，例如 MaskRCNN yolov8sseg yolo11sseg yolo26sseg")
     args = ap.parse_args()
 
     if args.list or not args.ref:
@@ -142,6 +148,10 @@ def main():
               f"{r['icc']:>9.4f}{missing:>6}")
     print("\n  ※ 上半部必須與 Table 1 完全一致，否則下半部不可用。缺牙 = 共同命中的牙在該方法"
           "某折不是 TP 的次數（應為 0）。")
+
+    if args.anchor:
+        paper_table(args, common, area)
+        return
 
     # 配對檢定：n = 13（共同命中）與 Mask R-CNN 系列都命中的全部牙
     mr = ref[args.ref[0]]
@@ -177,6 +187,77 @@ def main():
                     p = float("nan")
                 line += f"{metric.upper()} 勝 {win}/{len(ks)} p={p:.3f}　"
             print(line)
+
+
+def holm(ps):
+    """Holm–Bonferroni 校正，回傳與輸入同順序的校正後 p。"""
+    ps = np.asarray(ps, float)
+    order = np.argsort(ps)
+    adj, running = np.empty_like(ps), 0.0
+    for rank, i in enumerate(order):
+        running = max(running, min(1.0, (len(ps) - rank) * ps[i]))
+        adj[i] = running
+    return adj
+
+
+def fmt_p(p):
+    return "—" if not np.isfinite(p) else ("<0.001" if p < 0.001 else f"{p:.3f}")
+
+
+def paper_table(args, common, area):
+    """論文用的表：每列的指標值，加上該列相對 --anchor 的配對 p 值（Holm 校正）。"""
+    metrics = (("dice", "DICE"), ("iou", "IOU"), ("hd95", "HD95 (px)"), ("assd", "ASSD (px)"))
+    anchor = load(args.anchor)
+    names = args.compare + [args.anchor]
+    data = {n: (anchor if n == args.anchor else load(n)) for n in names}
+    vals = {n: row_metrics(f, common, area) for n, f in data.items()}
+
+    raw = {m: [] for m, _ in metrics}
+    for n in args.compare:
+        for m, _ in metrics:
+            a = tooth_mean(anchor, common, m)
+            b = tooth_mean(data[n], common, m)
+            ks = [k for k in common if np.isfinite(a[k]) and np.isfinite(b[k])]
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    p = wilcoxon([a[k] for k in ks], [b[k] for k in ks]).pvalue
+            except ValueError:
+                p = float("nan")
+            raw[m].append(p)
+    adj = {m: holm(v) for m, v in raw.items()}
+
+    print(f"\n論文表格（n = {len(common)} 共同命中；p = 與 {args.anchor} 的配對 Wilcoxon，"
+          f"每顆牙先取五折平均；括號內為原始 p，括號外為 Holm 校正後）\n")
+    head = "  " + f"{'Pipeline':<22}" + "".join(f"{lab:>12}{'p':>16}" for _, lab in metrics) + f"{'Area ICC':>10}"
+    print(head + "\n  " + "─" * (len(head) - 2))
+    out_rows = []
+    for n in names:
+        line = f"  {n:<22}"
+        rec = {"pipeline": n}
+        for j, (m, lab) in enumerate(metrics):
+            v = vals[n][m]
+            if n == args.anchor:
+                ptxt = "（基準）"
+                rec[f"{m}_p_holm"] = rec[f"{m}_p_raw"] = ""
+            else:
+                i = args.compare.index(n)
+                ptxt = f"{fmt_p(adj[m][i])} ({fmt_p(raw[m][i])})"
+                rec[f"{m}_p_holm"], rec[f"{m}_p_raw"] = adj[m][i], raw[m][i]
+            rec[m] = v
+            line += f"{v:>12.4f}" if m in ("dice", "iou") else f"{v:>12.2f}"
+            line += f"{ptxt:>16}"
+        rec["area_icc"] = vals[n]["icc"]
+        print(line + f"{vals[n]['icc']:>10.4f}")
+        out_rows.append(rec)
+    out = EVAL / f"table_pvalues_{args.anchor}.csv"
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        wr = csv.DictWriter(fh, fieldnames=list(out_rows[0]))
+        wr.writeheader()
+        wr.writerows(out_rows)
+    print(f"\n  ※ Area ICC 是整組牙的單一統計量，沒有逐顆配對值，不做檢定（表上填「—」）。")
+    print(f"  ※ Holm 校正在每個指標內、對 {len(args.compare)} 個比較進行。")
+    print(f"  → {out}")
 
 
 if __name__ == "__main__":
