@@ -32,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from icc import icc  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+if ROOT.name != "final":
+    sys.exit(f"⚠ 這支腳本必須放在 koi/setA/final/scripts/ 執行，目前的根目錄是 {ROOT}。請先 cd 到 koi/setA/final。")
 EVAL, ANN = ROOT / "eval", ROOT / "annotations"
 NEW = [("④ 重訓（同設定）", "FUS_OBBbase"),
        ("+ 融合（HRNet 不擾動）", "FUS_fuse_base"),

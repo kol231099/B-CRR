@@ -161,7 +161,7 @@ def compare(mine, ref):
         tp_a = {x for x in a if x[2] == "TP"}
         tp_b = {x for x in b if x[2] == "TP"}
         for x in tp_a ^ tp_b:
-            bad.append((k, x, "只在一邊是 TP"))
+            bad.append((k, x, "TP 集合不同（只在一邊是 TP）"))
         for x in tp_a & tp_b:
             n += 1
             for m in ("dice", "hd95", "assd"):
@@ -182,6 +182,10 @@ def main():
     ap.add_argument("--thr", type=float, default=0.35, help="偵測門檻，須與 Table 1 相同")
     args = ap.parse_args()
 
+    if ROOT.name != "final":
+        sys.exit(f"⚠ 這支腳本必須放在 koi/setA/final/scripts/ 執行，目前的根目錄是 {ROOT}。\n"
+                 f"  請先 cd 到 koi/setA/final，並確認腳本下載到 final/scripts/。")
+
     if args.check:
         ref_m, ref_e = args.check
         evaluate([(False, {"M": "CHK_MaskRCNN", "E": "CHK_OBB"}, lambda f: E.seg2(f, True))],
@@ -189,8 +193,10 @@ def main():
         ok = True
         for mine, ref in (("CHK_MaskRCNN", ref_m), ("CHK_OBB", ref_e)):
             n, bad = compare(mine, ref)
-            print(f"\n{mine} vs {ref}：比對 {n} 筆 TP，不吻合 {len(bad)}")
-            for b in bad[:10]:
+            n_set = sum(1 for b in bad if b[2].startswith("TP 集合"))
+            print(f"\n{mine} vs {ref}：共同 TP {n} 筆　TP 集合不同 {n_set} 筆　"
+                  f"數值不同 {len(bad) - n_set} 筆")
+            for b in sorted(bad, key=lambda b: b[2].startswith("TP 集合"))[:10]:
                 print(f"    fold {b[0]}　{b[1][0]} #{b[1][1]}　{b[2]}")
             ok &= not bad
         print("\n" + ("✅ 完全吻合：推論路徑與 Table 1 相同，可以跑新方法。" if ok else

@@ -45,6 +45,8 @@ import train_seg2  # noqa: E402  final 版
 from make_crops_obb import warp_of  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+if ROOT.name != "final":
+    sys.exit(f"⚠ 這支腳本必須放在 koi/setA/final/scripts/ 執行，目前的根目錄是 {ROOT}。請先 cd 到 koi/setA/final。")
 ANN, IMAGES, CROPS = ROOT / "annotations", ROOT / "images", ROOT / "crops_obb"
 PAD = 0.2
 JIT = {"ang": 5.0, "shift": 0.05, "scale": 0.08}
