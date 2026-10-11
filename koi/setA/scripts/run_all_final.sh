@@ -29,6 +29,9 @@ YOLO_EPOCHS=300
 YOLO_MODELS="yolov8s-seg yolo11s-seg yolo26s-seg"
 # holdout 結果檔名（eval/hold5_<名稱>_fold{k}.csv），順序對應 YOLO_MODELS
 YOLO_NAMES="yolov8sseg yolo11sseg yolo26sseg"
+# 每個 YOLO 的權重子資料夾（train_yolo.py --tag → yolo_runs/<tag>/fold{k}），順序對應 YOLO_MODELS。
+# ⚠ 必須與 YOLO_EVAL 讀取權重的資料夾一致；不給 --tag 時三個模型會寫進同一個 yolo_runs/fold{k} 互相覆蓋
+YOLO_TAGS="${YOLO_TAGS:-yolov8s-seg yolo11s-seg yolo26s-seg}"
 # ⚠ 必填：產生上面三個 YOLO holdout 結果檔的指令——必須是原本 Table 1 產生 YOLO 結果的同一支程式
 YOLO_EVAL="${YOLO_EVAL:-}"
 # ──────────────────────────────────────────────────────────────────────────────
@@ -72,8 +75,10 @@ sys.exit(1 if bad else 0)
 EOF
 [[ -n "$YOLO_EVAL" && "$YOLO_EVAL" != *"<"* ]] \
   || die "YOLO_EVAL 未設定：請填入原本產生 YOLO holdout 結果檔的指令（見腳本最上方）"
-read -r -a YM <<< "$YOLO_MODELS"; read -r -a YN <<< "$YOLO_NAMES"
-[[ ${#YM[@]} -eq ${#YN[@]} ]] || die "YOLO_MODELS 與 YOLO_NAMES 數量不同"
+read -r -a YM <<< "$YOLO_MODELS"; read -r -a YN <<< "$YOLO_NAMES"; read -r -a YT <<< "$YOLO_TAGS"
+[[ ${#YM[@]} -eq ${#YN[@]} && ${#YM[@]} -eq ${#YT[@]} ]] || die "YOLO_MODELS、YOLO_NAMES、YOLO_TAGS 數量不同"
+grep -q -- '--tag' scripts/train_yolo.py || die "scripts/train_yolo.py 沒有 --tag 參數，三個 YOLO 會互相覆蓋權重"
+[[ "$(printf '%s\n' "${YT[@]}" | sort -u | wc -l)" -eq ${#YT[@]} ]] || die "YOLO_TAGS 有重複"
 python3 - <<'EOF' || die "缺少套件（見上方），請先 pip install"
 import importlib.util, sys
 need = {"torch": "torch", "torchvision": "torchvision", "ultralytics": "ultralytics", "scipy": "scipy",
@@ -107,7 +112,7 @@ mkdir -p eval
   python3 -c "import segmentation_models_pytorch as s, timm; print('smp', s.__version__); print('timm', timm.__version__)"
   command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
   echo "settings: DEVICE=$DEVICE MR_DEVICE=$MR_DEVICE YOLO_DEVICE=$YOLO_DEVICE MR_EPOCHS=$MR_EPOCHS HR_EPOCHS=$HR_EPOCHS YOLO_EPOCHS=$YOLO_EPOCHS"
-  echo "YOLO_MODELS=$YOLO_MODELS"; echo "YOLO_EVAL=$YOLO_EVAL"
+  echo "YOLO_MODELS=$YOLO_MODELS"; echo "YOLO_TAGS=$YOLO_TAGS"; echo "YOLO_EVAL=$YOLO_EVAL"
   echo "annotations sha256:"; (cd annotations && sha256sum ./*.json 2>/dev/null || shasum -a 256 ./*.json)
 } > "$LOG/env.txt" 2>&1 || true
 echo "  環境 → $LOG/env.txt"
@@ -147,11 +152,14 @@ done
 
 # ─────────────────────────── 3. 三個 YOLO-seg ───────────────────────────
 step "3. YOLO-seg ×3（${YOLO_EPOCHS} epochs × 5 折）"
-for m in "${YM[@]}"; do
+for i in "${!YM[@]}"; do
+  m="${YM[$i]}"; tag="${YT[$i]}"
   for k in $FOLDS; do
     is_done "${m}_fold$k" && { echo "  $m fold $k 已完成，跳過"; continue; }
-    python3 scripts/train_yolo.py --fold "$k" --model "$m.pt" --epochs "$YOLO_EPOCHS" \
+    python3 scripts/train_yolo.py --fold "$k" --model "$m.pt" --tag "$tag" --epochs "$YOLO_EPOCHS" \
       --imgsz 1024 --batch 4 --device "$YOLO_DEVICE" 2>&1 | tee "$LOG/${m}_fold$k.log"
+    w="yolo_runs/$tag/fold$k/weights/best.pt"
+    [[ -f "$w" && "$w" -nt "$LOG/started" ]] || die "$m fold $k 訓練後找不到新的 $w"
     done_mark "${m}_fold$k"
   done
 done

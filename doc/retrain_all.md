@@ -64,6 +64,9 @@
 4. **填 `YOLO_EVAL`**：產生 YOLO holdout 結果檔 `eval/hold5_yolov8sseg_fold{k}.csv`（及 yolo11sseg、
    yolo26sseg）的指令。**必須是原本 Table 1 產生 YOLO 結果的同一支程式**，評估路徑才與其他模型一致。
    檔名若不同，一併改腳本上方的 `YOLO_NAMES`。
+5. **確認 `YOLO_TAGS`**：三個 YOLO 用 `train_yolo.py --tag <tag>` 各自存到 `yolo_runs/<tag>/fold{k}`
+   （預設 `yolov8s-seg yolo11s-seg yolo26s-seg`）。**必須與 `YOLO_EVAL` 讀權重的資料夾一致**；
+   不給 `--tag` 時三個模型會寫進同一個 `yolo_runs/fold{k}` 互相覆蓋。
 
 ---
 
