@@ -7,9 +7,14 @@
 所有中位數與 ICC 都算在「八條共同命中」的牙上，否則比的是誰漏的牙比較難。
 TP/FP/FN 則為各方法自身的全量統計。
 
+--exclude：把指定影像整張排除（標註、預測、FP/FN 全部不算）後重算三張表。
+以檔名主檔名比對，`89`、`89.jpg` 都可以。排除必須有事先講得出的理由（標註錯誤、
+影像品質、植體等），不能只因為模型在上面表現差——論文裡要同時報排除前後。
+
 用法：
     py scripts/make_tables8.py --split oof
     py scripts/make_tables8.py --split holdout
+    py scripts/make_tables8.py --split oof --exclude 89 22 14 81
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ OOF = [
     ("② MaskRCNN→HBB→HRNet", "e2e_oof_unet_tu-hrnet_w32_fold*.csv"),
     ("③ YOLO11-seg 單階段", "yolo_fold*.csv"),
     ("④ MaskRCNN→OBB→HRNet", "obb_maskrcnn_unet_tu-hrnet_w32_fold*.csv"),
+    ("④j MaskRCNN→OBB→HRNet 擾動", "obb_maskrcnn_unet_tu-hrnet_w32_jit_fold*.csv"),
     ("⑤ YOLO11-OBB→HRNet", "obb_yolo11s_unet_tu-hrnet_w32_fold*.csv"),
     ("⑥ YOLOv8-OBB→HRNet", "obb_yolov8s_unet_tu-hrnet_w32_fold*.csv"),
     ("⑦ YOLO12-OBB→HRNet", "obb_yolo12s_unet_tu-hrnet_w32_fold*.csv"),
@@ -44,11 +50,21 @@ HOLD = [
     ("② MaskRCNN→HBB→HRNet", "hold5_MaskRCNN_HBB_HRNet_fold*.csv"),
     ("③ YOLO11-seg 單階段", "hold5_YOLOseg_fold*.csv"),
     ("④ MaskRCNN→OBB→HRNet", "hold5_MaskRCNN_OBB_HRNet_fold*.csv"),
+    ("④j MaskRCNN→OBB→HRNet 擾動", "hold5_MaskRCNN_OBB_HRNet_jit_fold*.csv"),
+    ("①t Mask R-CNN +TTA", "hold5_MaskRCNN_tta_fold*.csv"),
+    ("⑨ 融合 +TTA", "hold5_MaskRCNN_OBB_HRNet_fuse_jit_tta_fold*.csv"),
     ("⑤ YOLO11-OBB→HRNet", "hold5_YOLOOBB_OBB_HRNet_fold*.csv"),
     ("⑥ YOLOv8-OBB→HRNet", "hold5_yolov8sOBB_OBB_HRNet_fold*.csv"),
     ("⑦ YOLO12-OBB→HRNet", "hold5_yolo12sOBB_OBB_HRNet_fold*.csv"),
     ("⑧ YOLO26-OBB→HRNet", "hold5_yolo26sOBB_OBB_HRNet_fold*.csv"),
 ]
+EXCLUDE: set[str] = set()   # 由 --exclude 設定，存主檔名
+ONLY: set[str] = set()      # 由 --only 設定；非空時只保留這些影像
+
+
+def excluded(name: str) -> bool:
+    stem = Path(name).stem
+    return stem in EXCLUDE or (bool(ONLY) and stem not in ONLY)
 
 
 def gt_geometry(split: str) -> dict:
@@ -65,6 +81,8 @@ def gt_geometry(split: str) -> dict:
                 per.setdefault(a["image_id"], []).append(a)
         for iid, anns in per.items():
             im = imgs[iid]
+            if excluded(im["file_name"]):
+                continue
             h, w = im["height"], im["width"]
             for gi, a in enumerate(anns):
                 m = np.zeros((h, w), np.uint8)
@@ -80,7 +98,8 @@ def gt_geometry(split: str) -> dict:
 def load(pattern: str):
     """回傳 [每折的 rows]；OOF 的五折是互斥的，holdout 的五折是重複評估。"""
     files = sorted(EVAL.glob(pattern))
-    return [list(csv.DictReader(f.open(encoding="utf-8"))) for f in files]
+    return [[r for r in csv.DictReader(f.open(encoding="utf-8")) if not excluded(r["image"])]
+            for f in files]
 
 
 def tp_map(rows):
@@ -93,7 +112,16 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--split", choices=["oof", "holdout"], default="oof")
     ap.add_argument("--merge", action="store_true", help="三張表併成一張")
+    ap.add_argument("--exclude", nargs="+", default=[], metavar="IMG",
+                    help="整張排除的影像，例如 89 22 14 81 或 89.jpg")
+    ap.add_argument("--only", nargs="+", default=[], metavar="IMG",
+                    help="只算這些影像，其餘全部排除，例如原本的 18 張 holdout")
     args = ap.parse_args()
+
+    def stems(lst):
+        return {Path(x.strip()).stem for a in lst for x in a.split(",") if x.strip()}
+    EXCLUDE.update(stems(args.exclude))
+    ONLY.update(stems(args.only))
     hold = args.split == "holdout"
     spec = HOLD if hold else OOF
     gt = gt_geometry(args.split)
@@ -118,7 +146,17 @@ def main() -> None:
             sets.append(set(merged))
     common = sorted(set.intersection(*sets) & set(gt))
     n_lab = len(gt)
-    print(f"\n{args.split.upper()}　共同命中 n={len(common)}　標註總數 {n_lab}\n")
+    print(f"\n{args.split.upper()}　共同命中 n={len(common)}　標註總數 {n_lab}")
+    if ONLY:
+        print(f"只算 {len(ONLY)} 張：{', '.join(sorted(ONLY, key=lambda x: (len(x), x)))}")
+    if EXCLUDE:
+        files = [ANN / "holdout.json"] if hold else [ANN / f"fold{k}_val.json" for k in range(5)]
+        stems = {Path(i["file_name"]).stem for fp in files
+                 for i in json.loads(fp.read_text(encoding="utf-8"))["images"]}
+        print(f"已排除影像：{', '.join(sorted(EXCLUDE & stems)) or '（無）'}")
+        if EXCLUDE - stems:
+            print(f"⚠ 這些不在 {args.split} 裡，沒有作用：{', '.join(sorted(EXCLUDE - stems))}")
+    print()
 
     def per_fold_tp(folds):
         return [tp_map(f) for f in folds]
