@@ -115,6 +115,8 @@ def main():
     ap.add_argument("--anchor", default=None, help="論文表格的主角（本方法），例如 FUS_fuse")
     ap.add_argument("--compare", nargs="+", default=None,
                     help="要與 --anchor 比較的方法，例如 MaskRCNN yolov8sseg yolo11sseg yolo26sseg")
+    ap.add_argument("--per-model", action="store_true",
+                    help="每個模型用自己五折都偵測到的牙評分（n 各自不同）；p 值用本方法與該模型都偵測到的牙配對")
     args = ap.parse_args()
 
     if args.list or not args.ref:
@@ -149,6 +151,9 @@ def main():
     print("\n  ※ 上半部必須與 Table 1 完全一致，否則下半部不可用。缺牙 = 共同命中的牙在該方法"
           "某折不是 TP 的次數（應為 0）。")
 
+    if args.anchor and args.per_model:
+        per_model_table(args, area)
+        return
     if args.anchor:
         paper_table(args, common, area)
         return
@@ -262,6 +267,69 @@ def paper_table(args, common, area):
         print(f"    {lab:<10} χ²({len(names) - 1}) = {r.statistic:.2f}　p = {r.pvalue:.2e}")
     print(f"\n  ※ Area ICC 是整組牙的單一統計量，沒有逐顆配對值，不做檢定（表上填「—」）。")
     print(f"  ※ Holm 校正在每個指標內、對 {len(args.compare)} 個比較進行。")
+    print(f"  → {out}")
+
+
+def per_model_table(args, area):
+    """每個模型各自的 n：數值用該模型五折都偵測到的牙；p 值用本方法與該模型兩者都偵測到的牙配對。
+
+    與 paper_table 的差別：不再要求五個模型都偵測到同一批牙，所以偵測較弱的模型
+    不會縮小其他模型的評估範圍。代價是各列的牙不完全相同，數值之間不是嚴格同一批牙的比較，
+    因此另外列出每個模型的偵測數，並且 p 值只在兩兩共同偵測的牙上做配對檢定。
+    """
+    metrics = (("dice", "DICE"), ("iou", "IOU"), ("hd95", "HD95 (px)"), ("assd", "ASSD (px)"))
+    names = args.compare + [args.anchor]
+    data = {n: load(n) for n in names}
+    own = {n: sorted(set.intersection(*(set(tp_map(f)) for f in data[n])) & set(area)) for n in names}
+    vals = {n: row_metrics(data[n], own[n], area) for n in names}
+
+    raw, n_pair = {m: [] for m, _ in metrics}, {}
+    for n in args.compare:
+        keys = sorted(set(own[args.anchor]) & set(own[n]))
+        n_pair[n] = len(keys)
+        for m, _ in metrics:
+            a, b = tooth_mean(data[args.anchor], keys, m), tooth_mean(data[n], keys, m)
+            ks = [k for k in keys if np.isfinite(a[k]) and np.isfinite(b[k])]
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    p = wilcoxon([a[k] for k in ks], [b[k] for k in ks]).pvalue
+            except ValueError:
+                p = float("nan")
+            raw[m].append(p)
+    adj = {m: holm(v) for m, v in raw.items()}
+
+    print(f"\n論文表格（各模型自己的 n：五折都偵測到的牙，標註共 {len(area)} 顆；"
+          f"p = 與 {args.anchor} 在兩者共同偵測的牙上配對 Wilcoxon，Holm 校正後，括號內為原始 p）\n")
+    head = "  " + f"{'Pipeline':<22}{'n':>4}" + "".join(f"{lab:>12}{'p':>16}" for _, lab in metrics) \
+        + f"{'Area ICC':>10}{'配對 n':>8}"
+    print(head + "\n  " + "─" * (len(head) - 2))
+    out_rows = []
+    for n in names:
+        line = f"  {n:<22}{len(own[n]):>4}"
+        rec = {"pipeline": n, "n_detected": len(own[n]), "n_total": len(area)}
+        for m, lab in metrics:
+            v = vals[n][m]
+            if n == args.anchor:
+                ptxt = "（基準）"
+                rec[f"{m}_p_holm"] = rec[f"{m}_p_raw"] = ""
+            else:
+                i = args.compare.index(n)
+                ptxt = f"{fmt_p(adj[m][i])} ({fmt_p(raw[m][i])})"
+                rec[f"{m}_p_holm"], rec[f"{m}_p_raw"] = adj[m][i], raw[m][i]
+            rec[m] = v
+            line += (f"{v:>12.4f}" if m in ("dice", "iou") else f"{v:>12.2f}") + f"{ptxt:>16}"
+        rec["area_icc"] = vals[n]["icc"]
+        rec["n_pair"] = n_pair.get(n, "")
+        print(line + f"{vals[n]['icc']:>10.4f}{n_pair.get(n, ''):>8}")
+        out_rows.append(rec)
+    out = EVAL / f"table_pvalues_permodel_{args.anchor}.csv"
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        wr = csv.DictWriter(fh, fieldnames=list(out_rows[0]))
+        wr.writeheader()
+        wr.writerows(out_rows)
+    print("\n  ※ n = 該模型五折都偵測到的牙數；配對 n = 本方法與該模型都偵測到的牙數（p 值用這批牙）。")
+    print("  ※ 各列的牙不完全相同，Friedman 需要同一批牙，此模式不計算。")
     print(f"  → {out}")
 
 
