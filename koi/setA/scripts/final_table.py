@@ -328,6 +328,24 @@ def per_model_table(args, area):
         wr = csv.DictWriter(fh, fieldnames=list(out_rows[0]))
         wr.writeheader()
         wr.writerows(out_rows)
+    # 方向檢查：各列數值來自不同的牙，不能直接比大小；在兩者共同偵測的同一批牙上，並列兩邊的數值與勝場
+    better = {"dice": 1, "iou": 1, "hd95": -1, "assd": -1}
+    print(f"\n  配對比較（同一批牙；數值 = 逐折中位數再平均；勝 = {args.anchor} 較好的牙數）")
+    head2 = "  " + f"{'對照模型':<16}{'配對 n':>7}" + "".join(f"{lab:>30}" for _, lab in metrics)
+    print(head2 + "\n  " + "─" * (len(head2) - 2))
+    for n in args.compare:
+        keys = sorted(set(own[args.anchor]) & set(own[n]))
+        va, vb = row_metrics(data[args.anchor], keys, area), row_metrics(data[n], keys, area)
+        line = f"  {n:<16}{len(keys):>7}"
+        for m, _ in metrics:
+            a, b = tooth_mean(data[args.anchor], keys, m), tooth_mean(data[n], keys, m)
+            win = sum(1 for k in keys if (a[k] - b[k]) * better[m] > 0)
+            fmt = "{:.4f}" if m in ("dice", "iou") else "{:.2f}"
+            cell = f"{fmt.format(va[m])} vs {fmt.format(vb[m])} 勝{win}/{len(keys)}"
+            line += f"{cell:>30}"
+        print(line)
+    print(f"  （每格：{args.anchor} vs 對照模型；勝場過半且 p 顯著，才代表 {args.anchor} 顯著較好）")
+
     print("\n  ※ n = 該模型五折都偵測到的牙數；配對 n = 本方法與該模型都偵測到的牙數（p 值用這批牙）。")
     print("  ※ 各列的牙不完全相同，Friedman 需要同一批牙，此模式不計算。")
     print(f"  → {out}")
