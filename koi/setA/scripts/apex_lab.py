@@ -281,7 +281,7 @@ def summarize(rows, split):
 
 
 def save_full(items, split, n, show=("GT", "M", "E", "F", "FA"), per_image=False):
-    """整張原圖：原始灰階、原始尺寸，不做任何對比調整，只把輪廓與根尖點畫上去。"""
+    """整張原圖：原始灰階、原始尺寸，不做任何對比調整，只把輪廓與根尖點畫上去；右邊並排未畫線的原圖。"""
     out = EVAL / f"apex_full_{split}"
     out.mkdir(exist_ok=True)
     color = {"GT": (0, 200, 0), "M": (255, 255, 0), "E": (0, 0, 255), "F": (0, 255, 255), "FA": (255, 0, 255)}
@@ -301,6 +301,10 @@ def save_full(items, split, n, show=("GT", "M", "E", "F", "FA"), per_image=False
                     cv2.circle(img, (int(round(pts[k][0])), int(round(pts[k][1]))), 4, color[k], -1)
             if "GT" in show:
                 cv2.circle(img, (int(round(g[0])), int(round(g[1]))), 5, color["GT"], -1)
+        # 右邊並排一張未畫線的原圖（中間留 20 px 白色間隔），方便對照
+        orig = cv2.imread(str(its[0][5]), cv2.IMREAD_COLOR)
+        gap = np.full((img.shape[0], 20, 3), 255, np.uint8)
+        img = np.hstack([img, gap, orig])
         stem = Path(its[0][2]).stem
         fname = (f"{stem}_all_f{its[0][1]}.png" if per_image
                  else f"{its[0][0]:06.1f}_{stem}_{its[0][3]}_f{its[0][1]}.png")
