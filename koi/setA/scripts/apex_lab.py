@@ -35,6 +35,7 @@ Mask R-CNN 的遮罩頭只有 28×28：一顆 800 px 長的牙，每格約 29 px
     python3 scripts/apex_lab.py --split oof --vis 20            # 另存最差 20 顆的根尖放大圖
     python3 scripts/apex_lab.py --split oof --only 1 13 17 --vis 99
     python3 scripts/apex_lab.py --split holdout
+    python3 scripts/apex_lab.py --split oof --full --teeth 81_0 22_1 1_1   # 整張原圖，不裁切不調對比
 輸出：eval/apex_<split>.csv（逐顆）、eval/apex_vis_<split>/（放大圖，含病人影像，只存本機）
 """
 
@@ -148,6 +149,10 @@ def main():
     ap.add_argument("--thr", type=float, default=0.35)
     ap.add_argument("--only", nargs="+", default=[], metavar="IMG", help="只跑這些影像（主檔名）")
     ap.add_argument("--vis", type=int, default=0, help="另存最差 N 顆（依 F 的根尖距離）的放大圖")
+    ap.add_argument("--full", action="store_true",
+                    help="改存整張原圖（不裁切、不放大、不調對比），把所有輪廓與根尖點畫上去")
+    ap.add_argument("--teeth", nargs="+", default=[], metavar="IMG_IDX",
+                    help="只畫這幾顆牙，例如 81_0 22_1（影像主檔名_牙號）；不受 --vis 數量限制")
     args = ap.parse_args()
 
     rows, vis_items = [], []
@@ -194,7 +199,18 @@ def main():
                     rows.append({"split": args.split, "fold": fold, "image": im["file_name"], "gt_idx": gi,
                                  "variant": v, "axial": round(axial, 2), "lateral": round(lateral, 2),
                                  "dist": round(dist, 2), "dice": r.get("dice", ""), "hd95": r.get("hd95", "")})
-                    if args.vis and v == "F":
+                    tid = f"{Path(im['file_name']).stem}_{gi}"
+                    want = (tid in args.teeth) if args.teeth else bool(args.vis)
+                    if want and v == "F" and args.full:
+                        # 整張原圖模式：只存輪廓與點（不存整張遮罩，避免吃光記憶體）
+                        mu, ax = axis_of(gt[gi])
+                        cont = {k: cv2.findContours(masks[k][pi].astype(np.uint8), cv2.RETR_EXTERNAL,
+                                                    cv2.CHAIN_APPROX_NONE)[0] for k in VARIANTS}
+                        cont["GT"] = cv2.findContours(gt[gi].astype(np.uint8), cv2.RETR_EXTERNAL,
+                                                      cv2.CHAIN_APPROX_NONE)[0]
+                        pts = {k: apex_of(masks[k][pi], mu, ax) for k in VARIANTS}
+                        vis_items.append((dist, fold, im["file_name"], gi, ga, path, cont, pts))
+                    elif want and v == "F":
                         # 只存根尖附近 ±140 px 的小塊，避免整張遮罩吃光記憶體
                         x0, y0 = int(max(ga[0] - 140, 0)), int(max(ga[1] - 140, 0))
                         x1, y1 = int(min(ga[0] + 140, w)), int(min(ga[1] + 140, h))
@@ -207,14 +223,18 @@ def main():
         sys.exit("沒有任何結果；請確認影像路徑（OOF 用 images/，holdout 用 holdout/）。")
 
     EVAL.mkdir(exist_ok=True)
-    out = EVAL / f"apex_{args.split}.csv"
+    # 有 --only / --teeth 時另存檔名，不覆蓋完整的結果
+    partial = "_partial" if (args.only or args.teeth) else ""
+    out = EVAL / f"apex_{args.split}{partial}.csv"
     with out.open("w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, fieldnames=list(rows[0]))
         wr.writeheader()
         wr.writerows(rows)
     summarize(rows, args.split)
-    if vis_items:
-        save_vis(vis_items, args.split, args.vis)
+    if vis_items and args.full:
+        save_full(vis_items, args.split, len(vis_items) if args.teeth else args.vis)
+    elif vis_items:
+        save_vis(vis_items, args.split, len(vis_items) if args.teeth else args.vis)
     print(f"\n逐顆結果 → {out}")
 
 
@@ -253,6 +273,22 @@ def summarize(rows, split):
               f"中位差 {np.median(x - y):+.2f} px　p = {p:.4f}")
     print("\n  判讀：F 的 axial 平均明顯為正、且 E 比 F 小 → 融合把根尖切短，FA 是對症的修正；"
           "\n        E 也一樣偏短 → 兩個模型都短，要看 GT（放大圖）或改模型本身。")
+
+
+def save_full(items, split, n):
+    """整張原圖：原始灰階、原始尺寸，不做任何對比調整，只把輪廓與根尖點畫上去。"""
+    out = EVAL / f"apex_full_{split}"
+    out.mkdir(exist_ok=True)
+    color = {"GT": (0, 200, 0), "M": (255, 255, 0), "E": (0, 0, 255), "F": (0, 255, 255), "FA": (255, 0, 255)}
+    for dist, fold, name, gi, g, path, cont, pts in sorted(items, key=lambda x: -x[0])[:n]:
+        img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        for k in ("M", "E", "FA", "F", "GT"):        # GT 最後畫，疊在最上層
+            cv2.drawContours(img, cont[k], -1, color[k], 2 if k in ("GT", "F") else 1)
+        for k in ("M", "E", "FA", "F"):
+            cv2.circle(img, (int(round(pts[k][0])), int(round(pts[k][1]))), 4, color[k], -1)
+        cv2.circle(img, (int(round(g[0])), int(round(g[1]))), 5, color["GT"], -1)
+        cv2.imwrite(str(out / f"{dist:06.1f}_{Path(name).stem}_{gi}_f{fold}.png"), img)
+    print(f"\n整張原圖 → {out}/（綠 GT、黃 融合（論文方法）、青 Mask R-CNN、紅 HRNet、洋紅 根尖感知融合；點 = 各自的根尖）")
 
 
 def save_vis(items, split, n):
