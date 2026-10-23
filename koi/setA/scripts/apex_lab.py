@@ -36,6 +36,7 @@ Mask R-CNN 的遮罩頭只有 28×28：一顆 800 px 長的牙，每格約 29 px
     python3 scripts/apex_lab.py --split oof --only 1 13 17 --vis 99
     python3 scripts/apex_lab.py --split holdout
     python3 scripts/apex_lab.py --split oof --full --teeth 81_0 22_1 1_1   # 整張原圖，不裁切不調對比
+    python3 scripts/apex_lab.py --split oof --full --only 1 --vis 99 --per-image --show GT F   # 一張影像所有牙、只畫綠與黃
 輸出：eval/apex_<split>.csv（逐顆）、eval/apex_vis_<split>/（放大圖，含病人影像，只存本機）
 """
 
@@ -151,6 +152,10 @@ def main():
     ap.add_argument("--vis", type=int, default=0, help="另存最差 N 顆（依 F 的根尖距離）的放大圖")
     ap.add_argument("--full", action="store_true",
                     help="改存整張原圖（不裁切、不放大、不調對比），把所有輪廓與根尖點畫上去")
+    ap.add_argument("--show", nargs="+", default=["GT", "M", "E", "F", "FA"], choices=["GT", "M", "E", "F", "FA"],
+                    help="--full 時要畫哪些（GT 綠、M 青、E 紅、F 黃、FA 洋紅），例如 --show GT F")
+    ap.add_argument("--per-image", action="store_true",
+                    help="--full 時同一張影像的牙畫在同一張圖上（不分開存）")
     ap.add_argument("--teeth", nargs="+", default=[], metavar="IMG_IDX",
                     help="只畫這幾顆牙，例如 81_0 22_1（影像主檔名_牙號）；不受 --vis 數量限制")
     args = ap.parse_args()
@@ -232,7 +237,7 @@ def main():
         wr.writerows(rows)
     summarize(rows, args.split)
     if vis_items and args.full:
-        save_full(vis_items, args.split, len(vis_items) if args.teeth else args.vis)
+        save_full(vis_items, args.split, len(vis_items) if args.teeth else args.vis, args.show, args.per_image)
     elif vis_items:
         save_vis(vis_items, args.split, len(vis_items) if args.teeth else args.vis)
     print(f"\n逐顆結果 → {out}")
@@ -275,19 +280,31 @@ def summarize(rows, split):
           "\n        E 也一樣偏短 → 兩個模型都短，要看 GT（放大圖）或改模型本身。")
 
 
-def save_full(items, split, n):
+def save_full(items, split, n, show=("GT", "M", "E", "F", "FA"), per_image=False):
     """整張原圖：原始灰階、原始尺寸，不做任何對比調整，只把輪廓與根尖點畫上去。"""
     out = EVAL / f"apex_full_{split}"
     out.mkdir(exist_ok=True)
     color = {"GT": (0, 200, 0), "M": (255, 255, 0), "E": (0, 0, 255), "F": (0, 255, 255), "FA": (255, 0, 255)}
-    for dist, fold, name, gi, g, path, cont, pts in sorted(items, key=lambda x: -x[0])[:n]:
-        img = cv2.imread(str(path), cv2.IMREAD_COLOR)
-        for k in ("M", "E", "FA", "F", "GT"):        # GT 最後畫，疊在最上層
-            cv2.drawContours(img, cont[k], -1, color[k], 2 if k in ("GT", "F") else 1)
-        for k in ("M", "E", "FA", "F"):
-            cv2.circle(img, (int(round(pts[k][0])), int(round(pts[k][1]))), 4, color[k], -1)
-        cv2.circle(img, (int(round(g[0])), int(round(g[1]))), 5, color["GT"], -1)
-        cv2.imwrite(str(out / f"{dist:06.1f}_{Path(name).stem}_{gi}_f{fold}.png"), img)
+    items = sorted(items, key=lambda x: -x[0])[:n]
+    groups: dict = {}
+    for it in items:   # it = (dist, fold, name, gi, g, path, cont, pts)
+        key = (it[1], it[2]) if per_image else (it[1], it[2], it[3])
+        groups.setdefault(key, []).append(it)
+    for key, its in groups.items():
+        img = cv2.imread(str(its[0][5]), cv2.IMREAD_COLOR)
+        for dist, fold, name, gi, g, path, cont, pts in its:
+            for k in ("M", "E", "FA", "F", "GT"):        # GT 最後畫，疊在最上層
+                if k in show:
+                    cv2.drawContours(img, cont[k], -1, color[k], 2 if k in ("GT", "F") else 1)
+            for k in ("M", "E", "FA", "F"):
+                if k in show:
+                    cv2.circle(img, (int(round(pts[k][0])), int(round(pts[k][1]))), 4, color[k], -1)
+            if "GT" in show:
+                cv2.circle(img, (int(round(g[0])), int(round(g[1]))), 5, color["GT"], -1)
+        stem = Path(its[0][2]).stem
+        fname = (f"{stem}_all_f{its[0][1]}.png" if per_image
+                 else f"{its[0][0]:06.1f}_{stem}_{its[0][3]}_f{its[0][1]}.png")
+        cv2.imwrite(str(out / fname), img)
     print(f"\n整張原圖 → {out}/（綠 GT、黃 融合（論文方法）、青 Mask R-CNN、紅 HRNet、洋紅 根尖感知融合；點 = 各自的根尖）")
 
 
