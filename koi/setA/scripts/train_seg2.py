@@ -163,10 +163,15 @@ class CropDataset(Dataset):
     def __len__(self) -> int:
         return len(self.ids)
 
-    def __getitem__(self, i: int):
+    def load(self, i: int) -> tuple[np.ndarray, np.ndarray]:
+        """原尺寸的 crop 與遮罩。子類別可改成現場裁切（見 train_seg2_obb.py 的框擾動）。"""
         cid = self.ids[i]
         img = cv2.imread(str(CROPS / "images" / f"{cid}.png"), cv2.IMREAD_GRAYSCALE)
         msk = cv2.imread(str(CROPS / "masks" / f"{cid}.png"), cv2.IMREAD_GRAYSCALE)
+        return img, msk
+
+    def __getitem__(self, i: int):
+        img, msk = self.load(i)
         img = cv2.resize(img, SIZE[::-1], interpolation=cv2.INTER_AREA)
         # 遮罩用 NEAREST：插值會在邊界產生灰階值，二值化後邊界會漂移
         msk = cv2.resize(msk, SIZE[::-1], interpolation=cv2.INTER_NEAREST)
@@ -205,6 +210,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--device", default="cpu", help="cpu / cuda / mps；預設 cpu 以維持既有實驗的可重現性")
     args = ap.parse_args()
 
     import segmentation_models_pytorch as smp
@@ -224,7 +230,7 @@ def main() -> None:
     dl_va = None if final else DataLoader(CropDataset(va_ids, False), batch_size=1, num_workers=0)
 
     model = build_seg2(args.arch, args.encoder,
-                       pretrained=args.arch not in ("unetscratch", "unetvanilla"))
+                       pretrained=args.arch not in ("unetscratch", "unetvanilla")).to(args.device)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
@@ -244,6 +250,7 @@ def main() -> None:
         model.train()
         t0, total = time.time(), 0.0
         for x, y in dl_tr:
+            x, y = x.to(args.device), y.to(args.device)
             logit = model(x)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logit, y) + dice_loss(logit, y)
             opt.zero_grad(set_to_none=True)
@@ -263,6 +270,7 @@ def main() -> None:
             ds = []
             with torch.no_grad():
                 for x, y in dl_va:
+                    x, y = x.to(args.device), y.to(args.device)
                     p = torch.sigmoid(model(x)) > 0.5
                     g = y > 0.5
                     ds.append(float(2 * (p & g).sum() / (p.sum() + g.sum() + 1e-9)))
